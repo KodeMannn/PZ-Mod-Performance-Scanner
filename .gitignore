@@ -1,0 +1,15 @@
+# Generated performance reports
+ModPerformanceReport.md
+
+# Log and temporary files
+*.log
+*.tmp
+*.bak
+
+# Environment and IDE settings
+.vscode/
+.idea/
+
+# Windows system files
+Thumbs.db
+Desktop.ini
