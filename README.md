@@ -48,18 +48,20 @@ This scanner runs a comprehensive static and runtime audit of your active game e
 
 ## 🚀 Quick Start
 
-### Method 1: One-Click GUI Launcher
-1. Download or clone this repository.
-2. Double-click **`Scan-PZModPerformance.bat`**.
-3. Review the color-coded terminal report or open the generated **`ModPerformanceReport.md`**.
+### Method 1: Standalone One-Click `.bat` (Recommended)
+`Scan-PZModPerformance.bat` is a **100% self-contained hybrid polyglot**. It has **zero dependencies** and does not even require the `.ps1` file to be present.
+1. Download **`Scan-PZModPerformance.bat`** (or grab the release zip).
+2. Place it anywhere (Desktop, your `Zomboid` folder, or USB).
+3. Double-click **`Scan-PZModPerformance.bat`**.
+4. Review the color-coded terminal report or open the generated **`ModPerformanceReport.md`**.
 
-### Method 2: PowerShell
-Open PowerShell in the folder and run:
+### Method 2: PowerShell (CLI Power Users)
+If you prefer running pure PowerShell or integrating it into automated scripts:
 ```powershell
 .\Scan-PZModPerformance.ps1
 ```
 
-Or run directly with custom output paths:
+Or specify custom output paths:
 ```powershell
 .\Scan-PZModPerformance.ps1 -ZomboidUserPath "$env:USERPROFILE\Zomboid" -ReportOutputPath "C:\MyReports\Report.md"
 ```
