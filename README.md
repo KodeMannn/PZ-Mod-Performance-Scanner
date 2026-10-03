@@ -55,23 +55,25 @@ Run interactive or automated scans with command-line flags:
 
 ## 🚀 Suite Profiles & Operations
 
-PZ-Mod-Performance-Suite features 7 selectable operations to fit your workflow:
+PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
 
 | Profile | Action / Target | Typical Duration | Best For |
 | :--- | :--- | :--- | :--- |
 | **`[1] Full Diagnostic Scan`** *(Default)* | Active Save (`mods.txt`), Workshop, Lua Hooks, VRAM, Hitches | **~2.5 seconds** | Identifying lag-causing mods and stutter sources in your active save |
 | **`[2] Dedicated Server Scan`** | Dedicated server `.ini` files (`servertest.ini` or custom path) | **~2.5 seconds** | Auditing server modpacks for VPS, Pterodactyl, and Co-op hosts |
-| **`[3] 1-Click Java GC Tuning`** | `ProjectZomboid64.json` launcher configuration | **< 1 second** | Eliminating 200–400ms periodic world freezes via low-latency G1GC |
-| **`[4] Safe Frame Cap Tuning`** | `options.ini` display frameRate setting | **< 1 second** | Throttling Lua tick execution overhead down from 240/uncapped FPS |
-| **`[5] Clean Phantom Mods`** | Active savegame `mods.txt` | **< 1 second** | Purging uninstalled ghost mods to stop console spam and speed up boot |
-| **`[6] Revert Changes / Backups`** | JVM config, FPS cap, and savegame mods | **< 1 second** | Safely restoring original `.bak` backups and vanilla engine settings |
-| **`[7] Open Last Report`** | `ModPerformanceReport.md` | **Instant** | Viewing detailed breakdown, conflict tables, and Discord summaries |
+| **`[3] Scan Local Workshop Mods`** | Local workshop development folder (`Zomboid\Workshop`) | **< 1 second** | Profiling custom mods under development before publishing to Steam |
+| **`[4] 1-Click Java GC Tuning`** | `ProjectZomboid64.json` launcher configuration | **< 1 second** | Eliminating 200–400ms periodic world freezes via low-latency G1GC |
+| **`[5] Safe Frame Cap Tuning`** | `options.ini` display frameRate setting | **< 1 second** | Throttling Lua tick execution overhead down from 240/uncapped FPS |
+| **`[6] Clean Phantom Mods`** | Active savegame `mods.txt` | **< 1 second** | Purging uninstalled ghost mods to stop console spam and speed up boot |
+| **`[7] Revert Changes / Backups`** | JVM config, FPS cap, and savegame mods | **< 1 second** | Safely restoring original `.bak` backups and vanilla engine settings |
+| **`[8] Open Last Report`** | `ModPerformanceReport.md` | **Instant** | Viewing detailed breakdown, conflict tables, and Discord summaries |
 
 ---
 
 ## 🔍 Key Features
 
 * **⚡ Ultra-Fast Multi-Library Workshop Indexing:** Finds mods across all Steam drives (`C:`, `D:`, `E:`, `H:`, external NVMe SSDs) via `libraryfolders.vdf`.
+* **🛠️ Local Workshop Staging Audit:** Directly scans custom mods being authored in your local `Zomboid\Workshop` folder without needing an active save.
 * **⏱️ Lua Event Hook Profiler:** Deep-scans every active mod script for per-frame execution hooks (`OnTick`, `OnRenderTick`, `OnPlayerUpdate`, `OnZombieUpdate`, `OnRender3D`).
 * **🧟 Heavy World & Inventory Query Audit:** Detects high-cost loops iterating over zombie lists (`getZombieList`), moving characters, and map grid squares (`getSquare`).
 * **🎨 Texture & VRAM Bloat Measurement:** Measures `.pack` texture archives and raw `.png` footprints, warning when mods consume excessive graphics memory (>100MB).

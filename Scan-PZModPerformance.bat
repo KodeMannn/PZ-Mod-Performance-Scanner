@@ -27,6 +27,8 @@ param(
     [string]$ServerConfigPath = "",
     [switch]$FixGC,
     [int]$CapFPS = 0,
+    [switch]$LocalWorkshop,
+    [string]$CustomWorkshopPath = "",
     [switch]$CleanSave,
     [string]$Revert = ""
 )
@@ -432,7 +434,7 @@ function Invoke-PZRevertChanges([string]$Target = "All") {
 # ==============================================================================
 # Core Diagnostic Engine
 # ==============================================================================
-function Invoke-PZScanEngine([string]$CustomServerIni = "") {
+function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorkshopOnly, [string]$CustomWorkshopPath = "") {
     Write-Host "`n=================================================================" -ForegroundColor Cyan
     Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  " -ForegroundColor Yellow
     Write-Host "         Created by @KodeMannn with the help of Gemini          " -ForegroundColor DarkCyan
@@ -450,8 +452,43 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "") {
 
     $activeMods = @()
     $saveName = "Unknown"
+    $modLocations = @{}
+    $modTitles = @{}
 
-    if ($CustomServerIni -and (Test-Path $CustomServerIni)) {
+    if ($LocalWorkshopOnly) {
+        $targetWs = if ($CustomWorkshopPath -and (Test-Path $CustomWorkshopPath)) {
+            $CustomWorkshopPath
+        } else {
+            Join-Path $ZomboidUserPath "Workshop"
+        }
+        $saveName = "Local Workshop: $targetWs"
+        Write-Host " [INFO] Audit Scope: Local Workshop Directory ($targetWs)" -ForegroundColor Cyan
+
+        if (-not (Test-Path $targetWs)) {
+            Write-Host " [!] Local Workshop folder not found at: $targetWs" -ForegroundColor Red
+            return
+        }
+
+        # Discover all mods inside the local workshop directory
+        $workshopInfos = Get-ChildItem -Path $targetWs -Recurse -Filter "mod.info" -ErrorAction SilentlyContinue
+        foreach ($info in $workshopInfos) {
+            $content = Get-Content $info.FullName -ErrorAction SilentlyContinue
+            $id = (($content | Where-Object { $_ -match '^id=' }) -replace '^id=\s*', '').Trim() | Select-Object -First 1
+            $name = (($content | Where-Object { $_ -match '^name=' }) -replace '^name=\s*', '').Trim() | Select-Object -First 1
+            if ($id) {
+                $scanDir = $info.DirectoryName
+                if ($info.Directory.Parent -and (Test-Path (Join-Path $info.Directory.Parent.FullName "common"))) {
+                    $scanDir = $info.Directory.Parent.FullName
+                }
+                if ($activeMods -notcontains $id) { $activeMods += $id }
+                if (-not $modLocations[$id]) {
+                    $modLocations[$id] = $scanDir
+                    $modTitles[$id] = if ($name) { $name } else { $id }
+                }
+            }
+        }
+        Write-Host " [INFO] Discovered $($activeMods.Count) local workshop mod(s) to audit" -ForegroundColor Gray
+    } elseif ($CustomServerIni -and (Test-Path $CustomServerIni)) {
         # Server mode
         $saveName = "Server Config: $(Split-Path $CustomServerIni -Leaf)"
         $iniLines = Get-Content $CustomServerIni
@@ -501,41 +538,62 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "") {
 
     Write-Host " [INFO] Total Enabled Mods to Audit: $($activeMods.Count)`n" -ForegroundColor Cyan
     if ($activeMods.Count -eq 0) {
-        Write-Host " [!] No enabled mods found to scan." -ForegroundColor Yellow
+        if ($LocalWorkshopOnly) {
+            Write-Host " [!] No mods with mod.info found in local workshop folder ($targetWs)." -ForegroundColor Yellow
+        } else {
+            Write-Host " [!] No enabled mods found to scan." -ForegroundColor Yellow
+        }
         return
     }
 
-    # Index installed mods
-    $modLocations = @{}
-    $modTitles = @{}
-
-    foreach ($wsPath in $validWorkshopPaths) {
-        $workshopInfos = Get-ChildItem -Path $wsPath -Recurse -Filter "mod.info" -ErrorAction SilentlyContinue
-        foreach ($info in $workshopInfos) {
-            $content = Get-Content $info.FullName -ErrorAction SilentlyContinue
-            $id = (($content | Where-Object { $_ -match '^id=' }) -replace '^id=\s*', '').Trim() | Select-Object -First 1
-            $name = (($content | Where-Object { $_ -match '^name=' }) -replace '^name=\s*', '').Trim() | Select-Object -First 1
-            if ($id) {
-                $parentFull = if ($info.Directory.Parent) { $info.Directory.Parent.FullName } else { $null }
-                $scanDir = if ($parentFull -and (Test-Path (Join-Path $parentFull "common"))) { $parentFull } else { $info.DirectoryName }
-                $modLocations[$id] = $scanDir
-                $modTitles[$id] = $name
+    # Index installed mods (when not in LocalWorkshopOnly mode)
+    if (-not $LocalWorkshopOnly) {
+        foreach ($wsPath in $validWorkshopPaths) {
+            $workshopInfos = Get-ChildItem -Path $wsPath -Recurse -Filter "mod.info" -ErrorAction SilentlyContinue
+            foreach ($info in $workshopInfos) {
+                $content = Get-Content $info.FullName -ErrorAction SilentlyContinue
+                $id = (($content | Where-Object { $_ -match '^id=' }) -replace '^id=\s*', '').Trim() | Select-Object -First 1
+                $name = (($content | Where-Object { $_ -match '^name=' }) -replace '^name=\s*', '').Trim() | Select-Object -First 1
+                if ($id) {
+                    $parentFull = if ($info.Directory.Parent) { $info.Directory.Parent.FullName } else { $null }
+                    $scanDir = if ($parentFull -and (Test-Path (Join-Path $parentFull "common"))) { $parentFull } else { $info.DirectoryName }
+                    $modLocations[$id] = $scanDir
+                    $modTitles[$id] = $name
+                }
             }
         }
-    }
 
-    $localModPath = Join-Path $ZomboidUserPath "mods"
-    if (Test-Path $localModPath) {
-        $localInfos = Get-ChildItem -Path $localModPath -Recurse -Filter "mod.info" -ErrorAction SilentlyContinue
-        foreach ($info in $localInfos) {
-            $content = Get-Content $info.FullName -ErrorAction SilentlyContinue
-            $id = (($content | Where-Object { $_ -match '^id=' }) -replace '^id=\s*', '').Trim() | Select-Object -First 1
-            $name = (($content | Where-Object { $_ -match '^name=' }) -replace '^name=\s*', '').Trim() | Select-Object -First 1
-            if ($id) {
-                $parentFull = if ($info.Directory.Parent) { $info.Directory.Parent.FullName } else { $null }
-                $scanDir = if ($parentFull -and (Test-Path (Join-Path $parentFull "common"))) { $parentFull } else { $info.DirectoryName }
-                $modLocations[$id] = $scanDir
-                $modTitles[$id] = $name
+        $localModPath = Join-Path $ZomboidUserPath "mods"
+        if (Test-Path $localModPath) {
+            $localInfos = Get-ChildItem -Path $localModPath -Recurse -Filter "mod.info" -ErrorAction SilentlyContinue
+            foreach ($info in $localInfos) {
+                $content = Get-Content $info.FullName -ErrorAction SilentlyContinue
+                $id = (($content | Where-Object { $_ -match '^id=' }) -replace '^id=\s*', '').Trim() | Select-Object -First 1
+                $name = (($content | Where-Object { $_ -match '^name=' }) -replace '^name=\s*', '').Trim() | Select-Object -First 1
+                if ($id) {
+                    $parentFull = if ($info.Directory.Parent) { $info.Directory.Parent.FullName } else { $null }
+                    $scanDir = if ($parentFull -and (Test-Path (Join-Path $parentFull "common"))) { $parentFull } else { $info.DirectoryName }
+                    $modLocations[$id] = $scanDir
+                    $modTitles[$id] = $name
+                }
+            }
+        }
+
+        $workshopStagingPath = Join-Path $ZomboidUserPath "Workshop"
+        if (Test-Path $workshopStagingPath) {
+            $wsStagingInfos = Get-ChildItem -Path $workshopStagingPath -Recurse -Filter "mod.info" -ErrorAction SilentlyContinue
+            foreach ($info in $wsStagingInfos) {
+                $content = Get-Content $info.FullName -ErrorAction SilentlyContinue
+                $id = (($content | Where-Object { $_ -match '^id=' }) -replace '^id=\s*', '').Trim() | Select-Object -First 1
+                $name = (($content | Where-Object { $_ -match '^name=' }) -replace '^name=\s*', '').Trim() | Select-Object -First 1
+                if ($id -and -not $modLocations[$id]) {
+                    $scanDir = $info.DirectoryName
+                    if ($info.Directory.Parent -and (Test-Path (Join-Path $info.Directory.Parent.FullName "common"))) {
+                        $scanDir = $info.Directory.Parent.FullName
+                    }
+                    $modLocations[$id] = $scanDir
+                    $modTitles[$id] = if ($name) { $name } else { $id }
+                }
             }
         }
     }
@@ -988,15 +1046,16 @@ function Show-PZMainMenu {
         Write-Host "=================================================================" -ForegroundColor Cyan
         Write-Host "  [1] Run Full Performance Diagnostic Scan (Active Save)" -ForegroundColor White
         Write-Host "  [2] Scan Dedicated / Multiplayer Server Config (.ini)" -ForegroundColor White
-        Write-Host "  [3] One-Click Java GC Optimizer (Apply G1GC + 5ms Pause Tuning)" -ForegroundColor White
-        Write-Host "  [4] Safe Frame Cap Optimizer (Reduce Lua Tick Multiplier)" -ForegroundColor White
-        Write-Host "  [5] Clean Phantom / Missing Mods from Savegame" -ForegroundColor White
-        Write-Host "  [6] Revert Changes / Restore Backups (JVM, FPS, Savegame)" -ForegroundColor Yellow
-        Write-Host "  [7] Open Last Generated Diagnostic Report" -ForegroundColor White
+        Write-Host "  [3] Scan Local Workshop Mods (Zomboid\Workshop)" -ForegroundColor White
+        Write-Host "  [4] One-Click Java GC Optimizer (Apply G1GC + 5ms Pause Tuning)" -ForegroundColor White
+        Write-Host "  [5] Safe Frame Cap Optimizer (Reduce Lua Tick Multiplier)" -ForegroundColor White
+        Write-Host "  [6] Clean Phantom / Missing Mods from Savegame" -ForegroundColor White
+        Write-Host "  [7] Revert Changes / Restore Backups (JVM, FPS, Savegame)" -ForegroundColor Yellow
+        Write-Host "  [8] Open Last Generated Diagnostic Report" -ForegroundColor White
         Write-Host "  [0] Exit" -ForegroundColor Gray
         Write-Host "=================================================================" -ForegroundColor Cyan
         
-        $choice = Read-Host " Select an option (0-7)"
+        $choice = Read-Host " Select an option (0-8)"
         switch ($choice.Trim()) {
             "1" {
                 Invoke-PZScanEngine
@@ -1015,11 +1074,21 @@ function Show-PZMainMenu {
                 Read-Host | Out-Null
             }
             "3" {
-                Invoke-PZFixGC
+                $defaultWs = Join-Path $ZomboidUserPath "Workshop"
+                Write-Host "`nLocal Workshop Folder: $defaultWs" -ForegroundColor Cyan
+                Write-Host "Press [Enter] to scan default folder, or enter a custom path:" -ForegroundColor Gray
+                $customPath = (Read-Host).Trim().Trim('"')
+                $wsToScan = if ($customPath -and (Test-Path $customPath)) { $customPath } else { $defaultWs }
+                Invoke-PZScanEngine -LocalWorkshopOnly -CustomWorkshopPath $wsToScan
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Read-Host | Out-Null
             }
             "4" {
+                Invoke-PZFixGC
+                Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
+                Read-Host | Out-Null
+            }
+            "5" {
                 Write-Host "`nChoose Frame Rate Cap for Project Zomboid:" -ForegroundColor Cyan
                 Write-Host " [1] 60 FPS   (Recommended for heavy 100+ modpacks)" -ForegroundColor White
                 Write-Host " [2] 120 FPS  (Great balance for 120Hz/144Hz displays)" -ForegroundColor White
@@ -1041,12 +1110,12 @@ function Show-PZMainMenu {
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Read-Host | Out-Null
             }
-            "5" {
+            "6" {
                 Invoke-PZCleanSaveMods
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Read-Host | Out-Null
             }
-            "6" {
+            "7" {
                 Write-Host "`n-----------------------------------------------------------------" -ForegroundColor Cyan
                 Write-Host "   REVERT CHANGES & RESTORE BACKUPS                              " -ForegroundColor Yellow
                 Write-Host "-----------------------------------------------------------------" -ForegroundColor Cyan
@@ -1067,7 +1136,7 @@ function Show-PZMainMenu {
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Read-Host | Out-Null
             }
-            "7" {
+            "8" {
                 if (Test-Path $ReportOutputPath) {
                     Start-Process $ReportOutputPath
                 } else {
@@ -1098,6 +1167,8 @@ if ($Revert) {
     Set-PZFrameCap $CapFPS
 } elseif ($CleanSave) {
     Invoke-PZCleanSaveMods
+} elseif ($LocalWorkshop) {
+    Invoke-PZScanEngine -LocalWorkshopOnly -CustomWorkshopPath $CustomWorkshopPath
 } elseif ($ServerConfigPath) {
     Invoke-PZScanEngine -CustomServerIni $ServerConfigPath
 } elseif ($Auto) {
