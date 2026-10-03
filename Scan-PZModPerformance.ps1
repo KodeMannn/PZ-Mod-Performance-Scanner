@@ -96,14 +96,25 @@ function Invoke-PZFixGC {
             Write-Host " [OK] Backed up original launcher JSON to ProjectZomboid64.json.bak" -ForegroundColor Gray
         }
 
+        # Read JSON and strip any leading BOM if present
         $raw = Get-Content $jsonPath -Raw -ErrorAction Stop
+        if ($raw.Length -gt 0 -and $raw[0] -eq [char]0xFEFF) {
+            $raw = $raw.Substring(1)
+        }
         $json = $raw | ConvertFrom-Json
 
-        # Set optimal heap (16GB max)
+        # Heap calculation: preserve existing large heap (e.g. -Xmx32g) if already >= 16GB
         $newArgs = @()
         foreach ($arg in $json.vmArgs) {
-            if ($arg -match '^-Xmx\d+[gmGM]') {
-                $newArgs += "-Xmx16g"
+            if ($arg -match '^-Xmx(\d+)([gmGM])') {
+                $num = [int]$matches[1]
+                $unit = $matches[2].ToLower()
+                $existingMB = if ($unit -eq 'g') { $num * 1024 } else { $num }
+                if ($existingMB -ge 16384) {
+                    $newArgs += $arg
+                } else {
+                    $newArgs += "-Xmx16g"
+                }
             } else {
                 $newArgs += $arg
             }
@@ -119,10 +130,12 @@ function Invoke-PZFixGC {
             )
         }
 
+        # Write clean UTF-8 WITHOUT BOM using UTF8Encoding($false)
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         $newContent = ($json | ConvertTo-Json -Depth 10)
-        [System.IO.File]::WriteAllText($jsonPath, $newContent, [System.Text.Encoding]::UTF8)
-        Write-Host " [SUCCESS] JVM successfully configured for Low-Latency G1GC (-XX:MaxGCPauseMillis=5, -Xmx16g)!" -ForegroundColor Green
-        Write-Host "           Multi-hundred millisecond GC freezes are now eliminated." -ForegroundColor Gray
+        [System.IO.File]::WriteAllText($jsonPath, $newContent, $utf8NoBom)
+        Write-Host " [SUCCESS] JVM successfully configured for Low-Latency G1GC (-XX:MaxGCPauseMillis=5)!" -ForegroundColor Green
+        Write-Host "           UTF-8 BOM-free encoding verified. ZombieBuddy & native launcher preserved." -ForegroundColor Gray
     } catch {
         Write-Host " [ERROR] Failed to update ProjectZomboid64.json: $($_.Exception.Message)" -ForegroundColor Red
     }
@@ -263,20 +276,37 @@ function Revert-PZGC {
     }
     $jsonPath = Join-Path $installDir "ProjectZomboid64.json"
     $bakPath = "$jsonPath.bak"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
     if (Test-Path $bakPath) {
-        Copy-Item $bakPath $jsonPath -Force
-        Write-Host " [SUCCESS] Restored original ProjectZomboid64.json from backup (.bak)!" -ForegroundColor Green
-        Write-Host "           Vanilla JVM arguments (ZGC / default heap) have been restored." -ForegroundColor Gray
+        try {
+            $bakBytes = [System.IO.File]::ReadAllBytes($bakPath)
+            if ($bakBytes.Length -ge 3 -and $bakBytes[0] -eq 0xEF -and $bakBytes[1] -eq 0xBB -and $bakBytes[2] -eq 0xBF) {
+                $cleanBytes = [byte[]]::new($bakBytes.Length - 3)
+                [System.Array]::Copy($bakBytes, 3, $cleanBytes, 0, $cleanBytes.Length)
+                [System.IO.File]::WriteAllBytes($jsonPath, $cleanBytes)
+                [System.IO.File]::WriteAllBytes($bakPath, $cleanBytes)
+            } else {
+                Copy-Item $bakPath $jsonPath -Force
+            }
+            Write-Host " [SUCCESS] Restored original ProjectZomboid64.json from backup (.bak)!" -ForegroundColor Green
+            Write-Host "           Vanilla JVM arguments (ZGC / default heap) have been restored without BOM." -ForegroundColor Gray
+        } catch {
+            Write-Host " [ERROR] Failed to restore ProjectZomboid64.json from backup: $($_.Exception.Message)" -ForegroundColor Red
+        }
     } else {
         if (Test-Path $jsonPath) {
             try {
                 $raw = Get-Content $jsonPath -Raw -ErrorAction Stop
+                if ($raw.Length -gt 0 -and $raw[0] -eq [char]0xFEFF) {
+                    $raw = $raw.Substring(1)
+                }
                 $json = $raw | ConvertFrom-Json
                 if ($json.windows -and $json.windows.'10.0.17134') {
                     $json.windows.'10.0.17134'.vmArgs = @("-XX:+UseZGC")
                 }
                 $newContent = ($json | ConvertTo-Json -Depth 10)
-                [System.IO.File]::WriteAllText($jsonPath, $newContent, [System.Text.Encoding]::UTF8)
+                [System.IO.File]::WriteAllText($jsonPath, $newContent, $utf8NoBom)
                 Write-Host " [SUCCESS] Reset JVM settings in ProjectZomboid64.json back to vanilla defaults (-XX:+UseZGC)." -ForegroundColor Green
             } catch {
                 Write-Host " [ERROR] Failed to restore ProjectZomboid64.json: $($_.Exception.Message)" -ForegroundColor Red
