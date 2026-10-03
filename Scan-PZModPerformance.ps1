@@ -1,10 +1,11 @@
 <#
 .SYNOPSIS
-    Project Zomboid Mod Performance & Optimization Suite v2.0.0
+    Project Zomboid Mod Performance & Optimization Suite v2.1.0
 .DESCRIPTION
     Comprehensive diagnostic scanner and optimization toolkit for Project Zomboid (Build 42 & 41).
-    Audits Lua event hooks, 3D meshes, texture packs, file collisions, runtime stutters,
-    and provides 1-click engine tuning for Java GC, frame caps, and savegame hygiene.
+    Features Build 42 version-aware deduplication, semantic Lua hook auditing (permanent vs.
+    transient vs. throttled), in-hook world query tracking, 3D mesh & VRAM profiling,
+    and 1-click engine tuning for Java GC, frame caps, and savegame hygiene.
 .AUTHOR
     KodeMannn (https://github.com/KodeMannn) - Coded with the assistance of Google Gemini
 #>
@@ -422,11 +423,142 @@ function Invoke-PZRevertChanges([string]$Target = "All") {
 }
 
 # ==============================================================================
+# Helper Functions: Semantic Lua & Version-Aware Directory Analysis
+# ==============================================================================
+function Get-ModActiveDirectories([string]$modDir, [string]$gameVersion) {
+    if (-not (Test-Path $modDir)) { return @() }
+    $subdirs = Get-ChildItem -Path $modDir -Directory -ErrorAction SilentlyContinue
+    $verDirs = $subdirs | Where-Object { $_.Name -match '^42\.\d+$|^42$|^41\.\d+$|^41$' }
+    
+    if (-not $verDirs) {
+        return @($modDir)
+    }
+
+    $activeDirs = @()
+    $isB42 = (-not $gameVersion -or $gameVersion -match '^42' -or $gameVersion -eq 'Unknown')
+    
+    if ($isB42) {
+        $v42 = $verDirs | Where-Object { $_.Name -match '^42' }
+        if ($v42) {
+            $sorted = $v42 | Sort-Object {
+                if ($_.Name -match '^42\.(\d+)$') { [int]$matches[1] } else { 0 }
+            } -Descending
+            $activeDirs += $sorted[0].FullName
+        }
+    } else {
+        $v41 = $verDirs | Where-Object { $_.Name -match '^41' }
+        if ($v41) {
+            $sorted = $v41 | Sort-Object {
+                if ($_.Name -match '^41\.(\d+)$') { [int]$matches[1] } else { 0 }
+            } -Descending
+            $activeDirs += $sorted[0].FullName
+        }
+    }
+
+    if ($activeDirs.Count -eq 0 -and $verDirs.Count -gt 0) {
+        $activeDirs += $verDirs[0].FullName
+    }
+
+    $common = $subdirs | Where-Object { $_.Name -eq 'common' }
+    if ($common) { $activeDirs += $common.FullName }
+
+    return $activeDirs
+}
+
+function Analyze-ModLuaSemantics([System.IO.FileInfo[]]$luaFiles) {
+    $permHooks = 0
+    $transHooks = 0
+    $throttledHooks = 0
+    $hookBreakdown = @()
+    $inHookWorldQueries = 0
+    $staticWorldQueries = 0
+    $inHookInvQueries = 0
+    $staticInvQueries = 0
+
+    $fileData = @()
+    $fullCodeBuilder = New-Object System.Text.StringBuilder
+
+    foreach ($lf in $luaFiles) {
+        $c = Get-Content $lf.FullName -Raw -ErrorAction SilentlyContinue
+        if ($c) {
+            [void]$fullCodeBuilder.AppendLine($c)
+            $fileData += [PSCustomObject]@{
+                Path = $lf.FullName
+                Code = $c
+            }
+        }
+    }
+    $fullCode = $fullCodeBuilder.ToString()
+
+    foreach ($fd in $fileData) {
+        $code = $fd.Code
+        $addMatches = [regex]::Matches($code, 'Events\.(OnTick|OnRenderTick|OnPlayerUpdate|OnZombieUpdate|OnRender3D)\.Add\s*\(\s*([a-zA-Z0-9_\.:]+)?')
+        $hasPerFrame = ($addMatches.Count -gt 0)
+
+        # Queries
+        $wq = ([regex]::Matches($code, 'getZombieList|getMovingObjects|getCharacters|getSquare|getGridSquare')).Count
+        $iq = ([regex]::Matches($code, 'getAllItems|getItems|FindAndReturn')).Count
+
+        if ($hasPerFrame) {
+            $inHookWorldQueries += $wq
+            $inHookInvQueries += $iq
+        } else {
+            $staticWorldQueries += $wq
+            $staticInvQueries += $iq
+        }
+
+        foreach ($m in $addMatches) {
+            $hookEvent = $m.Groups[1].Value
+            $funcName = $m.Groups[2].Value
+
+            $isRemove = $false
+            if ($funcName) {
+                $esc = [regex]::Escape($funcName)
+                if ($fullCode -match "Events\.$hookEvent\.Remove\s*\(\s*$esc") {
+                    $isRemove = $true
+                }
+            }
+            if (-not $isRemove -and $code -match "Events\.$hookEvent\.Remove") {
+                $isRemove = $true
+            }
+
+            if ($isRemove) {
+                $transHooks++
+                $hookBreakdown += "$hookEvent (Transient)"
+            } else {
+                # Throttled / modulo / interval timer / idle condition guard
+                if ($code -match '%\s*\d+|tickCounter|RefreshTick|TimeToRefresh|TicksToComplete|getMultiplier\(\)|frameCounter|interval|throttle|Modulo') {
+                    $throttledHooks++
+                    $hookBreakdown += "$hookEvent (Throttled)"
+                } elseif ($code -match 'if\s+not\s+\w+\s+then\s+return|if\s+\w+\s*==\s*0\s+then\s+return|if\s+not\s+player:isMoving') {
+                    $throttledHooks++
+                    $hookBreakdown += "$hookEvent (State-Gated)"
+                } else {
+                    $permHooks++
+                    $hookBreakdown += "$hookEvent (Permanent Loop)"
+                }
+            }
+        }
+    }
+
+    return [PSCustomObject]@{
+        PermanentHooks = $permHooks
+        TransientHooks = $transHooks
+        ThrottledHooks = $throttledHooks
+        InHookWorldQueries = $inHookWorldQueries
+        StaticWorldQueries = $staticWorldQueries
+        InHookInvQueries = $inHookInvQueries
+        StaticInvQueries = $staticInvQueries
+        HookBreakdown = $hookBreakdown
+    }
+}
+
+# ==============================================================================
 # Core Diagnostic Engine
 # ==============================================================================
 function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorkshopOnly, [string]$CustomWorkshopPath = "") {
     Write-Host "`n=================================================================" -ForegroundColor Cyan
-    Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  " -ForegroundColor Yellow
+    Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.1.0  " -ForegroundColor Yellow
     Write-Host "         Created by @KodeMannn with the help of Gemini          " -ForegroundColor DarkCyan
     Write-Host "=================================================================`n" -ForegroundColor Cyan
 
@@ -622,7 +754,16 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
         $riskScore = 0
         $riskReasons = @()
 
-        $allFiles = Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue
+        $activeDirs = Get-ModActiveDirectories -modDir $dir -gameVersion $pzVersion
+        $allFiles = @()
+        foreach ($ad in $activeDirs) {
+            $allFiles += Get-ChildItem -Path $ad -Recurse -File -ErrorAction SilentlyContinue
+        }
+        $rootFiles = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
+        foreach ($rf in $rootFiles) {
+            if ($allFiles -notcontains $rf) { $allFiles += $rf }
+        }
+
         $totalBytes = ($allFiles | Measure-Object -Property Length -Sum).Sum
         $totalMB = [math]::Round($totalBytes / 1MB, 2)
         
@@ -647,69 +788,85 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
             }
         }
 
-        # Lua hook audit
-        $luaFiles = $allFiles | Where-Object { $_.Extension -eq '.lua' }
-        foreach ($lua in $luaFiles) {
-            $code = Get-Content $lua.FullName -Raw -ErrorAction SilentlyContinue
-            if ($code) {
-                $onTick += ([regex]::Matches($code, 'Events\.OnTick\.Add')).Count
-                $onRenderTick += ([regex]::Matches($code, 'Events\.OnRenderTick\.Add')).Count
-                $onPlayerUpdate += ([regex]::Matches($code, 'Events\.OnPlayerUpdate\.Add')).Count
-                $onZombieUpdate += ([regex]::Matches($code, 'Events\.OnZombieUpdate\.Add')).Count
-                $onRender3D += ([regex]::Matches($code, 'Events\.OnRender3D\.Add')).Count
-                $worldQueries += ([regex]::Matches($code, 'getZombieList|getMovingObjects|getCharacters|getSquare|getGridSquare')).Count
-                $inventoryQueries += ([regex]::Matches($code, 'getAllItems|getItems|FindAndReturn')).Count
-            }
-        }
+        # Semantic Lua hook & query audit
+        $luaFiles = @($allFiles | Where-Object { $_.Extension -eq '.lua' })
+        $luaSemantics = Analyze-ModLuaSemantics -luaFiles $luaFiles
 
-        $perFrameTotal = $onTick + $onRenderTick + $onPlayerUpdate + $onZombieUpdate + $onRender3D
+        $permHooks = $luaSemantics.PermanentHooks
+        $transHooks = $luaSemantics.TransientHooks
+        $throttledHooks = $luaSemantics.ThrottledHooks
+        $inHookWorldQueries = $luaSemantics.InHookWorldQueries
+        $staticWorldQueries = $luaSemantics.StaticWorldQueries
+        $inHookInvQueries = $luaSemantics.InHookInvQueries
+        $staticInvQueries = $luaSemantics.StaticInvQueries
+        $totalWorldQueries = $inHookWorldQueries + $staticWorldQueries
+        $totalInvQueries = $inHookInvQueries + $staticInvQueries
+        $perFrameTotal = $permHooks + $transHooks + $throttledHooks
 
-        # High-overhead heuristics
+        # High-overhead heuristics & known engine bottlenecks
+        $stutterVerdict = ""
         if ($modId -match "aparosa_pz3dMinimap") {
             $riskScore += 90
-            $riskReasons += "Minimap calculates squares per frame in Lua (author notes 13-18ms/frame overhead)"
+            $stutterVerdict = "Severe Main-Thread Lua Stutter (13-18ms frame delay logged by author)"
+            $riskReasons += "Minimap continuously calculates square matrices per frame in Lua"
         }
         if ($modId -match "PZVoxelStudioViewpoint") {
             $riskScore += 85
-            $riskReasons += "Massive 3D model injection ($modelCount models) causing severe VRAM and chunk meshing pauses"
+            $stutterVerdict = "Severe Chunk Meshing Freezes & Heavy VRAM Load"
+            $riskReasons += "Massive 3D model injection ($modelCount models) causing 400-500ms chunk stalls"
         }
         if ($modId -match "ZombieDismemberment") {
-            $riskScore += 50
+            $riskScore += 45
+            $stutterVerdict = "Zombie Density CPU Overhead"
             $riskReasons += "Executes on every zombie update to adjust bone states and blood models"
         }
         if ($modId -match "VanillaVehiclesAnimated") {
             $riskScore += 35
-            $riskReasons += "Missing vehicle templates causing console error logging"
+            $stutterVerdict = "Vehicle Stream Console Logging Spikes"
+            $riskReasons += "Missing vehicle templates causing synchronous console error logging bursts in B42"
         }
         if ($textureMB -gt 100) {
             $riskScore += 20
             $riskReasons += "Heavy texture pack ($textureMB MB of textures) causing high VRAM consumption"
         }
 
-        # Dynamic scoring
-        $riskScore += ($perFrameTotal * 8)
-        $riskScore += [math]::Min(25, [math]::Floor($worldQueries / 4))
-        if ($modelCount -gt 500) { $riskScore += 25 }
-        elseif ($modelCount -gt 50) { $riskScore += 10 }
-        if ($totalMB -gt 50) { $riskScore += 10 }
+        # Dynamic semantic scoring
+        $riskScore += ($permHooks * 12)
+        $riskScore += [math]::Round($throttledHooks * 1.5)
+        $riskScore += [math]::Round($transHooks * 0.5)
+
+        $riskScore += [math]::Min(25, $inHookWorldQueries * 2)
+        $riskScore += [math]::Min(5, [math]::Floor($staticWorldQueries / 20))
+        $riskScore += [math]::Min(15, [math]::Floor($inHookInvQueries / 2))
+        $riskScore += [math]::Min(3, [math]::Floor($staticInvQueries / 50))
+
+        if ($modelCount -gt 5000) { $riskScore += 45 }
+        elseif ($modelCount -gt 1000) { $riskScore += 25 }
+        elseif ($modelCount -gt 100) { $riskScore += 10 }
+        elseif ($modelCount -gt 20) { $riskScore += 5 }
+
+        if ($totalMB -gt 100) { $riskScore += 10 }
+        elseif ($totalMB -gt 50) { $riskScore += 5 }
 
         # Dynamic diagnostic reasons for operational overhead
         $dynamicReasons = @()
-        if ($perFrameTotal -gt 0) {
-            $hookDetails = @()
-            if ($onTick -gt 0) { $hookDetails += "$onTick OnTick" }
-            if ($onRenderTick -gt 0) { $hookDetails += "$onRenderTick OnRenderTick" }
-            if ($onPlayerUpdate -gt 0) { $hookDetails += "$onPlayerUpdate OnPlayerUpdate" }
-            if ($onZombieUpdate -gt 0) { $hookDetails += "$onZombieUpdate OnZombieUpdate" }
-            if ($onRender3D -gt 0) { $hookDetails += "$onRender3D OnRender3D" }
-            $hookStr = if ($hookDetails.Count -gt 0) { " ($($hookDetails -join ', '))" } else { "" }
-            $dynamicReasons += "$perFrameTotal per-frame Lua hook$(if ($perFrameTotal -ne 1) { 's' } else { '' })$hookStr firing every frame"
+        if ($permHooks -gt 0) {
+            $dynamicReasons += "$permHooks unconstrained permanent loop$(if ($permHooks -ne 1) { 's' } else { '' }) firing every frame"
         }
-        if ($worldQueries -gt 0) {
-            $dynamicReasons += "$worldQueries world square/entity quer$(if ($worldQueries -eq 1) { 'y' } else { 'ies' }) (getSquare/getZombieList)"
+        if ($throttledHooks -gt 0) {
+            $dynamicReasons += "$throttledHooks throttled / timer-gated hook$(if ($throttledHooks -ne 1) { 's' } else { '' }) (periodic execution)"
         }
-        if ($inventoryQueries -gt 15) {
-            $dynamicReasons += "$inventoryQueries inventory/item container searches"
+        if ($transHooks -gt 0) {
+            $dynamicReasons += "$transHooks transient / self-terminating hook$(if ($transHooks -ne 1) { 's' } else { '' }) (UI/bootstrap only)"
+        }
+        if ($inHookWorldQueries -gt 0) {
+            $dynamicReasons += "$inHookWorldQueries in-hook world quer$(if ($inHookWorldQueries -eq 1) { 'y' } else { 'ies' }) (getSquare/getZombieList)"
+        }
+        if ($staticWorldQueries -gt 25) {
+            $dynamicReasons += "$staticWorldQueries interactive / UI world queries"
+        }
+        if ($inHookInvQueries -gt 5) {
+            $dynamicReasons += "$inHookInvQueries in-hook inventory searches"
         }
         if ($modelCount -gt 50 -and -not ($riskReasons -match "model")) {
             $dynamicReasons += "$modelCount custom 3D model definitions"
@@ -721,8 +878,28 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
         if ($riskReasons.Count -eq 0 -and $dynamicReasons.Count -gt 0) {
             $riskReasons += $dynamicReasons
         }
-        if ($riskReasons.Count -eq 0 -and $riskScore -ge 20) {
-            $riskReasons += "Moderate runtime resource footprint"
+
+        # Stutter Verdict Determination
+        if (-not $stutterVerdict) {
+            if ($riskScore -ge 75) {
+                $stutterVerdict = "Critical Stutter Risk (Immediate FPS drops or chunk hitching)"
+            } elseif ($riskScore -ge 45) {
+                if ($transHooks -gt 15) {
+                    $stutterVerdict = "Situational Hitching (Action/XP sync spikes, idle is clean)"
+                } else {
+                    $stutterVerdict = "High Resource Overhead (Heavy loops or queries)"
+                }
+            } elseif ($riskScore -ge 20) {
+                $stutterVerdict = "Moderate Resource Load (Periodic timers or asset weight)"
+            } else {
+                if ($transHooks -gt 0 -and $permHooks -eq 0) {
+                    $stutterVerdict = "Safe / Harmless (Transient / self-terminating hooks with zero background cost)"
+                } elseif ($throttledHooks -gt 0 -and $permHooks -eq 0) {
+                    $stutterVerdict = "Safe / Well-Optimized (Throttled timer / modulo-gated hooks)"
+                } else {
+                    $stutterVerdict = "Safe / Lightweight (Minimal runtime impact)"
+                }
+            }
         }
 
         $tier = "Tier 4 (Lightweight)"
@@ -736,15 +913,21 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
             Tier = $tier
             RiskScore = [math]::Min(100, $riskScore)
             PerFrameHooks = $perFrameTotal
-            OnTick = $onTick
-            OnRenderTick = $onRenderTick
-            PlayerUpdate = $onPlayerUpdate
-            ZombieUpdate = $onZombieUpdate
-            WorldQueries = $worldQueries
+            PermanentHooks = $permHooks
+            TransientHooks = $transHooks
+            ThrottledHooks = $throttledHooks
+            InHookWorldQueries = $inHookWorldQueries
+            StaticWorldQueries = $staticWorldQueries
+            TotalWorldQueries = $totalWorldQueries
+            InHookInvQueries = $inHookInvQueries
+            StaticInvQueries = $staticInvQueries
+            TotalInvQueries = $totalInvQueries
             SizeMB = $totalMB
             TextureMB = $textureMB
             ModelCount = $modelCount
+            Verdict = $stutterVerdict
             Reasons = ($riskReasons -join "; ")
+            HookBreakdown = ($luaSemantics.HookBreakdown -join ", ")
         }
     }
 
@@ -881,12 +1064,18 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
         }
         $prefix = "[$($mod.Tier)]".PadRight(23)
         $name = $mod.ModName
-        if ($name.Length -gt 38) { $name = $name.Substring(0, 35) + "..." }
-        $namePadded = $name.PadRight(38)
+        if ($name.Length -gt 36) { $name = $name.Substring(0, 33) + "..." }
+        $namePadded = $name.PadRight(36)
         
-        Write-Host " $prefix $namePadded (Score: $($mod.RiskScore.ToString().PadLeft(3)) | Hooks: $($mod.PerFrameHooks.ToString().PadLeft(2)) | Size: $($mod.SizeMB.ToString().PadLeft(5)) MB)" -ForegroundColor $color
+        $hookText = "Loops: $($mod.PermanentHooks) Perm"
+        if ($mod.TransientHooks -gt 0 -or $mod.ThrottledHooks -gt 0) {
+            $hookText += ", $($mod.TransientHooks) Trans, $($mod.ThrottledHooks) Throt"
+        }
+        
+        Write-Host " $prefix $namePadded (Score: $($mod.RiskScore.ToString().PadLeft(3)) | $hookText | Size: $($mod.SizeMB.ToString().PadLeft(5)) MB)" -ForegroundColor $color
+        Write-Host "   -> VERDICT: $($mod.Verdict)" -ForegroundColor $(if ($mod.RiskScore -ge 45) { "Yellow" } else { "DarkCyan" })
         if ($mod.Reasons -and $mod.RiskScore -ge 20) {
-            Write-Host "   -> $($mod.Reasons)" -ForegroundColor DarkGray
+            Write-Host "   -> DETAILS: $($mod.Reasons)" -ForegroundColor DarkGray
         }
     }
 
@@ -934,7 +1123,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
     # Generate Markdown Report
     $md = @()
     $md += "# Project Zomboid Mod Performance & Optimization Diagnostic Report"
-    $md += "*Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME by PZ-Mod-Performance-Suite v2.0.0 (Coded with the help of Google Gemini)*"
+    $md += "*Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME by PZ-Mod-Performance-Suite v2.1.0 (Coded with the help of Google Gemini)*"
     $md += ""
     $md += "## Executive Summary"
     $md += "- **Game Version:** $pzVersion"
@@ -949,30 +1138,36 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
     $md += "- **Direct File Override Clashes:** $($collisions.Count) total ($($safeCollisions.Count) Safe, $($riskyCollisions.Count) High/Moderate Risk)"
     $md += ""
     $md += "---"
-    $md += "## Key Bottlenecks & Moderate Impact Mods (Tier 1 - Tier 3)"
+    $md += "## Key Bottlenecks & High Risk Mods (Tier 1 - Tier 3)"
     $md += ""
     $criticals = $sortedMods | Where-Object { $_.RiskScore -ge 20 }
-    foreach ($c in $criticals) {
-        $modIdText = $c.ModId
-        $md += "### **$($c.ModName)** ($modIdText)"
-        $md += "- **Impact Classification:** **$($c.Tier)** (Score: $($c.RiskScore)/100)"
-        $md += "- **Per-Frame Hooks:** $($c.PerFrameHooks) (OnTick: $($c.OnTick), RenderTick: $($c.OnRenderTick), PlayerUpdate: $($c.PlayerUpdate), ZombieUpdate: $($c.ZombieUpdate))"
-        $md += "- **World Object Queries:** $($c.WorldQueries)"
-        $md += "- **Asset Load:** $($c.SizeMB) MB total ($($c.TextureMB) MB textures, $($c.ModelCount) 3D meshes)"
-        if ($c.Reasons) {
-            $md += "- **Primary Diagnostic Note:** $($c.Reasons)"
+    if ($criticals.Count -gt 0) {
+        foreach ($c in $criticals) {
+            $modIdText = $c.ModId
+            $md += "### **$($c.ModName)** ($modIdText)"
+            $md += "- **Impact Classification:** **$($c.Tier)** (Score: $($c.RiskScore)/100)"
+            $md += "- **Stutter Verdict:** **$($c.Verdict)**"
+            $md += "- **Hook Breakdown:** $($c.PermanentHooks) Permanent Loops, $($c.TransientHooks) Transient (self-terminating), $($c.ThrottledHooks) Throttled (timer-gated)"
+            $md += "- **World Object Queries:** $($c.InHookWorldQueries) in-hook queries, $($c.StaticWorldQueries) UI/static queries"
+            $md += "- **Asset Load:** $($c.SizeMB) MB total ($($c.TextureMB) MB textures, $($c.ModelCount) 3D meshes)"
+            if ($c.Reasons) {
+                $md += "- **Diagnostic Details:** $($c.Reasons)"
+            }
+            $md += ""
         }
+    } else {
+        $md += "*No mods exceeded the Tier 3 threshold. Your active mod list is exceptionally well-optimized!*"
         $md += ""
     }
 
     $md += "---"
     $md += "## All Active Mods Ranked by Performance Impact"
     $md += ""
-    $md += "| Mod Name | Mod ID | Tier | Risk Score | Per-Frame Hooks | World Queries | Size (MB) | Textures (MB) | Models |"
-    $md += "|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|"
+    $md += "| Mod Name | Mod ID | Tier | Score | Perm Loops | Trans / Throt | Queries (Hook/UI) | Size (MB) | Models | Stutter Verdict |"
+    $md += "|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---|"
     foreach ($m in $sortedMods) {
         $mId = $m.ModId
-        $md += "| $($m.ModName) | $mId | $($m.Tier) | $($m.RiskScore) | $($m.PerFrameHooks) | $($m.WorldQueries) | $($m.SizeMB) | $($m.TextureMB) | $($m.ModelCount) |"
+        $md += "| $($m.ModName) | $mId | $($m.Tier) | $($m.RiskScore) | $($m.PermanentHooks) | $($m.TransientHooks) / $($m.ThrottledHooks) | $($m.InHookWorldQueries) / $($m.StaticWorldQueries) | $($m.SizeMB) | $($m.ModelCount) | $($m.Verdict) |"
     }
 
     if ($collisions.Count -gt 0) {
@@ -984,7 +1179,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
 
         if ($riskyCollisions.Count -gt 0) {
             $md += ""
-            $md += "### ⚠️ High-Risk Script & Logic Conflicts (Require Attention)"
+            $md += "### [ALERT] High-Risk Script & Logic Conflicts (Require Attention)"
             $md += "These files overwrite executable Lua code or game definition scripts. One mod will completely replace the logic of another."
             $md += ""
             $md += "| File Path | Risk Level | Conflict Type | Conflicting Mods | Diagnostic Impact |"
@@ -996,7 +1191,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
 
         if ($safeCollisions.Count -gt 0) {
             $md += ""
-            $md += "### ✅ Verified Safe Conflicts (Localization Merges & Shared Assets)"
+            $md += "### [SAFE] Verified Safe Conflicts (Localization Merges & Shared Assets)"
             $md += "These files are harmless. Project Zomboid automatically merges translation dictionaries, and shared UI category icons or Git metadata do not alter gameplay mechanics."
             $md += ""
             $md += "| File Path | Status | Category | Conflicting Mods | Safety Note |"
@@ -1019,7 +1214,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
     $md += "Top Lag Impact Mods: $top3"
     $md += '```'
 
-    $md | Out-File -FilePath $ReportOutputPath -Encoding utf8
+    [System.IO.File]::WriteAllLines($ReportOutputPath, $md, [System.Text.UTF8Encoding]::new($false))
     Write-Host "`n [SUCCESS] Full Diagnostic Report saved to: $ReportOutputPath" -ForegroundColor Green
     Write-Host "=================================================================`n" -ForegroundColor Cyan
 }
@@ -1031,7 +1226,7 @@ function Show-PZMainMenu {
     while ($true) {
         Clear-Host
         Write-Host "=================================================================" -ForegroundColor Cyan
-        Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  " -ForegroundColor Yellow
+        Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.1.0  " -ForegroundColor Yellow
         Write-Host "         Created by @KodeMannn with the help of Gemini          " -ForegroundColor DarkCyan
         Write-Host "=================================================================" -ForegroundColor Cyan
         Write-Host "  [1] Run Full Performance Diagnostic Scan (Active Save)" -ForegroundColor White

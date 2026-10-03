@@ -73,9 +73,13 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
 ## 🔍 Key Features
 
 * **⚡ Ultra-Fast Multi-Library Workshop Indexing:** Finds mods across all Steam drives (`C:`, `D:`, `E:`, `H:`, external NVMe SSDs) via `libraryfolders.vdf`.
+* **🧠 Intelligent Semantic Lua Auditor (v2.1.0):** Evaluates Lua code semantics to differentiate:
+  * **Permanent Loops:** Unconstrained hooks executing every frame at 100–240 FPS (heavily penalized).
+  * **Transient Hooks:** Self-terminating hooks with `.Remove` calls (UI listeners, 1-tick bootstrappers, retry loops) that cost virtually zero at runtime.
+  * **Throttled / Gated Handlers:** Hooks gated by modulo counters (`% 30`), interval timers (`counter >= 500`), or idle state returns (`if n == 0 return`).
+* **📁 Build 42 Version-Aware Deduplication:** Accurately targets the active version subfolder (e.g. `42.20` or `42.14` + `common/`), eliminating 2x–3x score inflation from historical version directories.
+* **🎯 In-Hook Query Separation:** Distinguishes high-frequency per-frame world queries (`getZombieList`, `getSquare`) from harmless interactive queries executed only when clicking context menus or crafting.
 * **🛠️ Local Workshop Staging Audit:** Directly scans custom mods being authored in your local `Zomboid\Workshop` folder without needing an active save.
-* **⏱️ Lua Event Hook Profiler:** Deep-scans every active mod script for per-frame execution hooks (`OnTick`, `OnRenderTick`, `OnPlayerUpdate`, `OnZombieUpdate`, `OnRender3D`).
-* **🧟 Heavy World & Inventory Query Audit:** Detects high-cost loops iterating over zombie lists (`getZombieList`), moving characters, and map grid squares (`getSquare`).
 * **🎨 Texture & VRAM Bloat Measurement:** Measures `.pack` texture archives and raw `.png` footprints, warning when mods consume excessive graphics memory (>100MB).
 * **🛡️ Intelligent Conflict & Override Classifier:** Automatically classifies mod file overlaps into:
   * **Safe (Translations & Shared UI):** Verifies harmless localization dictionary merges (`/translate/`), shared category icons, and Git metadata.
@@ -93,13 +97,14 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
 
 | Bottleneck Category | Engine Impact | Severity | Primary Culprits |
 | :--- | :--- | :--- | :--- |
-| **Per-Frame Lua Overflows** | Consumes entire 16.6ms frame budget running Lua scripts | **CRITICAL** | Heavy `OnTick`, `OnPlayerUpdate`, `OnZombieUpdate` hooks |
-| **VRAM & Chunk Meshing Choke** | Stalls render thread for 100–250ms when moving across chunks | **CRITICAL** | Massive 3D model & voxel replacement packs (10,000+ models) |
+| **VRAM & Chunk Meshing Choke** | Stalls render thread for 300–500ms when moving across chunk boundaries | **CRITICAL** | Massive 3D model injection packs (10,000+ models, >150MB textures) |
+| **Unconstrained Permanent Lua Loops** | Consumes main-thread CPU budget running Lua calculations 240 times/sec | **CRITICAL** | Heavy `OnTick`, `OnPlayerUpdate` loops without throttle guards |
 | **Java GC Memory Sweeps** | Freezes entire world for 200–400ms during garbage collection | **HIGH RISK** | Oversized heap (`-Xmx32g`), ZGC pauses under Lua table churn |
-| **Uncapped 240 FPS Multiplier** | Forces Lua per-frame hooks to execute 240 times/sec instead of 60 | **HIGH RISK** | `frameRate=240` or uncapped FPS in `options.ini` |
+| **Missing Asset / Error Floods** | Floods `console.txt` with template syntax & missing asset disk logging | **HIGH RISK** | Outdated vehicle or animation templates in Build 42 |
 | **Direct Lua Script Collisions** | One mod silently overrides another mod's script logic | **HIGH RISK** | Overlapping files in `media/lua/client/` or `server/` |
-| **Heavy World Entity Iteration** | Massive CPU spikes scanning all zombies/squares in radius | **MODERATE** | `getZombieList()`, `getMovingObjects()`, `getSquare()` loops |
-| **Missing Asset / Error Floods** | Floods `console.txt` with template syntax & missing asset errors | **MODERATE** | Outdated vehicle or animation templates |
+| **Per-Frame World Entity Queries** | High CPU cost continuously scanning zombies/squares in radius inside tick loops | **MODERATE** | In-hook `getZombieList()`, `getSquare()` loops |
+| **Throttled / Periodic Handlers** | Minimal CPU cost executing only once every 30–500 ticks | **SAFE / LOW** | Modulo tick counters (`%`), timer accumulators, idle guards |
+| **Transient Hooks & Bootstrappers** | Fires for 1 frame on boot or UI open, then calls `Events.*.Remove` | **SAFE** | 1-tick monkey-patches, UI listeners, action callbacks |
 | **Localization & Icon Merges** | Standard dictionary merge; no gameplay logic altered | **SAFE** | Translation files (`/translate/`), shared category icons |
 
 ---
@@ -108,13 +113,13 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
 
 ```text
 =================================================================
-   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  
+   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.1.0  
          Created by @KodeMannn with the help of Gemini          
 =================================================================
 
  [INFO] Detected Game Version: 42.21.0
- [INFO] Active Savegame: Outbreak / 2026-10-02_17-05-43
- [INFO] Total Enabled Mods to Audit: 39
+ [INFO] Active Savegame: Outbreak / 2026-10-03_14-51-16
+ [INFO] Total Enabled Mods to Audit: 29
 
  [*] Auditing Lua hooks, 3D meshes, texture packs, and file collisions...
 
@@ -122,53 +127,48 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
    RUNTIME ENGINE TELEMETRY SUMMARY
 -----------------------------------------------------------------
  Configured Frame Cap : 240 FPS (Active: 240 FPS)
- GPU VRAM Usage       : 1999 MB free of 12282 MB
- Java Heap Allocation : 2313 MB used of 4456 MB
- Slow Frames (>50ms)  : 7 recorded in last session
- Worst Frame Spike    : 397.2 ms
- GC Freeze Pauses     : 7 collector pauses logged
- File Override Clashes: 304 detected (302 Safe, 2 High/Moderate Risk)
+ GPU VRAM Usage       : 839 MB free of 12282 MB
+ Java Heap Allocation : 8689 MB used of 12800 MB
+ Slow Frames (>50ms)  : 91 recorded in last session
+ Worst Frame Spike    : 524 ms
+ GC Freeze Pauses     : 91 collector pauses logged
+ File Override Clashes: 161 detected (159 Safe, 2 High/Moderate Risk)
 
 -----------------------------------------------------------------
    ACTIVE MODS RANKED BY STUTTER & PERFORMANCE IMPACT
 -----------------------------------------------------------------
- [Tier 1 (CRITICAL)]     6258 3D models for Viewpoint [sour_... (Score: 100 | Hooks:  0 | Size: 319.19 MB)
-   -> Massive 3D model injection (10194 models) causing severe VRAM and chunk meshing pauses; Heavy texture pack (156.87 MB of textures) causing high VRAM consumption
- [Tier 2 (HIGH RISK)]    Zombie Dismemberment [B42.21]          (Score:  66 | Hooks:  2 | Size:  5.38 MB)
-   -> Executes on every zombie update to adjust bone states and blood models
- [Tier 2 (HIGH RISK)]    Vanilla Vehicles Animated              (Score:  60 | Hooks:  0 | Size: 23.39 MB)
-   -> Missing vehicle templates causing console error logging
- [Tier 3 (MODERATE)]     Neat Building                          (Score:  44 | Hooks:  3 | Size: 10.89 MB)
- [Tier 3 (MODERATE)]     Tidy Up Meister                        (Score:  43 | Hooks:  5 | Size:  1.28 MB)
- [Tier 4 (Lightweight)]  Viewpoint                              (Score:   0 | Hooks:  0 | Size:  2.37 MB)
-
- [!] Notice: 4 mod(s) in save are uninstalled from disk (omitted from performance audit):
-     - CleanUI
-     - PFHDTrueCargo
-     - ImmersiveSnow
-     - PZTheMutants
-     -> Tip: Select Menu Option [5] to clean these phantom mods from your save.
+ [Tier 1 (CRITICAL)]     6258 3D models for Viewpoint [sou... (Score: 100 | Loops: 0 Perm | Size: 319.19 MB)
+   -> VERDICT: Severe Chunk Meshing Freezes & Heavy VRAM Load
+   -> DETAILS: Massive 3D model injection (10194 models) causing 400-500ms chunk stalls; Heavy texture pack (156.87 MB of textures) causing high VRAM consumption
+ [Tier 3 (MODERATE)]     True Crawling                        (Score:  22 | Loops: 0 Perm, 0 Trans, 1 Throt | Size:  1.29 MB)
+   -> VERDICT: Moderate Resource Load (Periodic timers or asset weight)
+   -> DETAILS: 1 throttled / timer-gated hook (periodic execution); 10 in-hook world queries (getSquare/getZombieList)
+ [Tier 4 (Lightweight)]  Foggy Breath                         (Score:  12 | Loops: 0 Perm, 0 Trans, 1 Throt | Size:  0.25 MB)
+   -> VERDICT: Safe / Well-Optimized (Throttled timer / modulo-gated hooks)
+ [Tier 4 (Lightweight)]  NeatUI Equipment                     (Score:  12 | Loops: 1 Perm | Size:  1.55 MB)
+   -> VERDICT: Safe / Lightweight (Minimal runtime impact)
+ [Tier 4 (Lightweight)]  Project Cook                         (Score:   2 | Loops: 0 Perm, 1 Trans, 0 Throt | Size:  7.17 MB)
+   -> VERDICT: Safe / Harmless (Transient / self-terminating hooks with zero background cost)
+ [Tier 4 (Lightweight)]  Neat Crafting                        (Score:   0 | Loops: 0 Perm, 1 Trans, 0 Throt | Size:  3.88 MB)
+   -> VERDICT: Safe / Harmless (Transient / self-terminating hooks with zero background cost)
+ [Tier 4 (Lightweight)]  Viewpoint                            (Score:   0 | Loops: 0 Perm | Size:  2.37 MB)
+   -> VERDICT: Safe / Lightweight (Minimal runtime impact)
 
 -----------------------------------------------------------------
    DETECTED MOD FILE OVERRIDE CONFLICTS
 -----------------------------------------------------------------
- Total File Overlaps: 304 (302 Safe, 2 High/Moderate Risk)
+ Total File Overlaps: 161 (159 Safe, 2 High/Moderate Risk)
 
  [ALERT] High-Risk Code / Script Overrides (2 detected):
    [!] media/lua/client/fwoscript.lua
        Category: Executable Lua Script
        Impact:   Executable Lua code override; one mod completely overwrites the other
        Mods:     FWO Working Bench Press & Treadmill, FWO Fitness Workout Overhaul
-   [!] media/lua/server/fwoscript.lua
-       Category: Executable Lua Script
-       Impact:   Executable Lua code override; one mod completely overwrites the other
-       Mods:     FWO Working Bench Press & Treadmill, FWO Fitness Workout Overhaul
 
- [SAFE] Safe Overrides (302 harmless files):
-        302 files are SAFE translation merges, shared UI icons, or Git metadata.
+ [SAFE] Safe Overrides (159 harmless files):
+        159 files are SAFE translation merges, shared UI icons, or Git metadata.
    [SAFE] media/lua/shared/translate/ptbr/sandbox.json (Translation Merge)
-   [SAFE] media/ui/categoryicon/blade.png (Shared UI Asset)
-   ... and 300 more safe files (see ModPerformanceReport.md)
+   ... and 158 more safe files (see ModPerformanceReport.md)
 
  [SUCCESS] Full Diagnostic Report saved to: ModPerformanceReport.md
 =================================================================
