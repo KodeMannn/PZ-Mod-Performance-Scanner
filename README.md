@@ -167,6 +167,12 @@ Run interactive or automated scans with command-line flags:
 
 ---
 
+## 🤖 Disclaimer & Acknowledgments
+
+This tool was designed and developed by [@KodeMannn](https://github.com/KodeMannn) with the coding assistance and pair-programming of **Google Gemini**.
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).

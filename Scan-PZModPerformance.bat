@@ -16,7 +16,7 @@ exit /b
     Audits Lua event hooks, 3D meshes, texture packs, file collisions, runtime stutters,
     and provides 1-click engine tuning for Java GC, frame caps, and savegame hygiene.
 .AUTHOR
-    KodeMannn (https://github.com/KodeMannn)
+    KodeMannn (https://github.com/KodeMannn) - Coded with the assistance of Google Gemini
 #>
 
 [CmdletBinding()]
@@ -405,7 +405,7 @@ function Invoke-PZRevertChanges([string]$Target = "All") {
 function Invoke-PZScanEngine([string]$CustomServerIni = "") {
     Write-Host "`n=================================================================" -ForegroundColor Cyan
     Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  " -ForegroundColor Yellow
-    Write-Host "                    Created by @KodeMannn                        " -ForegroundColor DarkCyan
+    Write-Host "         Created by @KodeMannn with the help of Gemini          " -ForegroundColor DarkCyan
     Write-Host "=================================================================`n" -ForegroundColor Cyan
 
     $versionFile = Join-Path $ZomboidUserPath "version.txt"
@@ -824,7 +824,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "") {
     # Generate Markdown Report
     $md = @()
     $md += "# Project Zomboid Mod Performance & Optimization Diagnostic Report"
-    $md += "*Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME by PZ-Mod-Performance-Suite v2.0.0*"
+    $md += "*Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME by PZ-Mod-Performance-Suite v2.0.0 (Coded with the help of Google Gemini)*"
     $md += ""
     $md += "## Executive Summary"
     $md += "- **Game Version:** $pzVersion"
@@ -922,7 +922,7 @@ function Show-PZMainMenu {
         Clear-Host
         Write-Host "=================================================================" -ForegroundColor Cyan
         Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  " -ForegroundColor Yellow
-        Write-Host "                    Created by @KodeMannn                        " -ForegroundColor DarkCyan
+        Write-Host "         Created by @KodeMannn with the help of Gemini          " -ForegroundColor DarkCyan
         Write-Host "=================================================================" -ForegroundColor Cyan
         Write-Host "  [1] Run Full Performance Diagnostic Scan (Active Save)" -ForegroundColor White
         Write-Host "  [2] Scan Dedicated / Multiplayer Server Config (.ini)" -ForegroundColor White
