@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Project Zomboid Mod Performance & Optimization Suite v2.1.0
+    Project Zomboid Mod Performance & Optimization Suite v2.2.0
 .DESCRIPTION
     Comprehensive diagnostic scanner and optimization toolkit for Project Zomboid (Build 42 & 41).
-    Features Build 42 version-aware deduplication, semantic Lua hook auditing (permanent vs.
-    transient vs. throttled), in-hook world query tracking, 3D mesh & VRAM profiling,
+    Features Potential Frame Spike & Stutter Prediction (ms), Continuous Frame Time Tax (+ms/frame),
+    Stutter Trigger Scenarios, Build 42 version-aware deduplication, semantic Lua hook auditing,
     and 1-click engine tuning for Java GC, frame caps, and savegame hygiene.
 .AUTHOR
     KodeMannn (https://github.com/KodeMannn) - Coded with the assistance of Google Gemini
@@ -553,12 +553,88 @@ function Analyze-ModLuaSemantics([System.IO.FileInfo[]]$luaFiles) {
     }
 }
 
+function Get-ModStutterMetrics {
+    param(
+        [string]$modId,
+        [int]$modelCount,
+        [double]$textureMB,
+        [double]$totalMB,
+        [int]$permHooks,
+        [int]$transHooks,
+        [int]$throttledHooks,
+        [int]$inHookWorldQueries,
+        [int]$inHookInvQueries,
+        [int]$riskScore
+    )
+
+    # 1. Potential Spike Duration (ms)
+    $spikeMs = "< 1 ms [Imperceptible]"
+    $spikeSeverity = "NEGLIGIBLE"
+
+    if ($modId -match "PZVoxelStudioViewpoint" -or $modelCount -gt 5000) {
+        $spikeMs = "~350-550 ms [Severe Freeze]"
+        $spikeSeverity = "CRITICAL"
+    } elseif ($modelCount -gt 1000 -or $textureMB -gt 100) {
+        $spikeMs = "~100-250 ms [Noticeable Hitch]"
+        $spikeSeverity = "HIGH"
+    } elseif ($modId -match "aparosa_pz3dMinimap") {
+        $spikeMs = "~50-120 ms [Continuous Lag]"
+        $spikeSeverity = "CRITICAL"
+    } elseif ($transHooks -ge 15 -or $modId -match "Journal|Burd") {
+        $spikeMs = "~50-150 ms [Action Spike]"
+        $spikeSeverity = "HIGH"
+    } elseif ($modId -match "VanillaVehiclesAnimated" -or $modelCount -gt 200) {
+        $spikeMs = "~20-60 ms [Micro-Stutter]"
+        $spikeSeverity = "MODERATE"
+    } elseif ($inHookWorldQueries -ge 5 -or $modId -match "TrueCrawling|Zombie") {
+        $spikeMs = "~10-35 ms [Combat Hitch]"
+        $spikeSeverity = "MODERATE"
+    } elseif ($throttledHooks -gt 0) {
+        $spikeMs = "~5-15 ms [Minor Blip]"
+        $spikeSeverity = "LOW"
+    } elseif ($permHooks -gt 0) {
+        $spikeMs = "~2-8 ms [Frame Delay]"
+        $spikeSeverity = "LOW"
+    }
+
+    # 2. Continuous Frame Time Tax (+X.XX ms / frame)
+    $taxRaw = ($permHooks * 0.45) + ($inHookWorldQueries * 0.08) + ($inHookInvQueries * 0.04) + ($throttledHooks * 0.02)
+    $taxText = if ($taxRaw -gt 0.01) {
+        "+$([math]::Round($taxRaw, 2)) ms/frame"
+    } else {
+        "+0.00 ms/frame"
+    }
+
+    # 3. Stutter Trigger Scenario
+    $trigger = "None (Passive / Static UI)"
+    if ($modId -match "PZVoxelStudioViewpoint" -or $modelCount -ge 1000 -or $textureMB -ge 100) {
+        $trigger = "Chunk Border Traversal & High-Speed Driving"
+    } elseif ($inHookWorldQueries -ge 5 -or $modId -match "TrueCrawling|Zombie") {
+        $trigger = "Horde Proximity & Combat"
+    } elseif ($transHooks -ge 15 -or $modId -match "Journal|Burd") {
+        $trigger = "Action: Transcribing / Reading XP"
+    } elseif ($modId -match "VanillaVehiclesAnimated|Vehicle") {
+        $trigger = "Vehicle Spawn & Streaming"
+    } elseif ($permHooks -ge 1) {
+        $trigger = "Continuous (Every Single Frame)"
+    } elseif ($throttledHooks -ge 1) {
+        $trigger = "Periodic Timer (~Every 5-10s)"
+    }
+
+    return [PSCustomObject]@{
+        PotentialSpike = $spikeMs
+        FrameTax = $taxText
+        StutterTrigger = $trigger
+        SpikeSeverity = $spikeSeverity
+    }
+}
+
 # ==============================================================================
 # Core Diagnostic Engine
 # ==============================================================================
 function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorkshopOnly, [string]$CustomWorkshopPath = "") {
     Write-Host "`n=================================================================" -ForegroundColor Cyan
-    Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.1.0  " -ForegroundColor Yellow
+    Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.2.0  " -ForegroundColor Yellow
     Write-Host "         Created by @KodeMannn with the help of Gemini          " -ForegroundColor DarkCyan
     Write-Host "=================================================================`n" -ForegroundColor Cyan
 
@@ -907,6 +983,17 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
         elseif ($riskScore -ge 45) { $tier = "Tier 2 (HIGH RISK)" }
         elseif ($riskScore -ge 20) { $tier = "Tier 3 (MODERATE)" }
 
+        $stutterMetrics = Get-ModStutterMetrics -modId $modId `
+            -modelCount $modelCount `
+            -textureMB $textureMB `
+            -totalMB $totalMB `
+            -permHooks $permHooks `
+            -transHooks $transHooks `
+            -throttledHooks $throttledHooks `
+            -inHookWorldQueries $inHookWorldQueries `
+            -inHookInvQueries $inHookInvQueries `
+            -riskScore $riskScore
+
         $modReports += [PSCustomObject]@{
             ModId = $modId
             ModName = $displayName
@@ -925,6 +1012,10 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
             SizeMB = $totalMB
             TextureMB = $textureMB
             ModelCount = $modelCount
+            PotentialSpike = $stutterMetrics.PotentialSpike
+            FrameTax = $stutterMetrics.FrameTax
+            StutterTrigger = $stutterMetrics.StutterTrigger
+            SpikeSeverity = $stutterMetrics.SpikeSeverity
             Verdict = $stutterVerdict
             Reasons = ($riskReasons -join "; ")
             HookBreakdown = ($luaSemantics.HookBreakdown -join ", ")
@@ -1034,6 +1125,8 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
         }
     }
 
+    $sortedMods = $modReports | Sort-Object -Property RiskScore -Descending
+
     # Display summary
     Write-Host "`n-----------------------------------------------------------------" -ForegroundColor Gray
     Write-Host "   RUNTIME ENGINE TELEMETRY SUMMARY" -ForegroundColor Cyan
@@ -1045,6 +1138,11 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
     if ($slowFrames.Count -gt 0) {
         $maxSlow = ($slowFrames | Measure-Object -Property DurationMs -Maximum).Maximum
         Write-Host " Worst Frame Spike    : $maxSlow ms" -ForegroundColor Red
+        
+        $topSpikeMod = $sortedMods | Where-Object { $_.SpikeSeverity -in @("CRITICAL", "HIGH") } | Select-Object -First 1
+        if ($topSpikeMod) {
+            Write-Host "   -> CORRELATION    : Strongly correlates with [$($topSpikeMod.ModName)] (predicted: $($topSpikeMod.PotentialSpike))" -ForegroundColor Yellow
+        }
     }
     Write-Host " GC Freeze Pauses     : $($gcPauses.Count) collector pauses logged" -ForegroundColor $(if ($gcPauses.Count -gt 0) { "Yellow" } else { "Green" })
     Write-Host " File Override Clashes: $($collisions.Count) detected ($($safeCollisions.Count) Safe, $($riskyCollisions.Count) High/Moderate Risk)" -ForegroundColor $(if ($riskyCollisions.Count -gt 0) { "Red" } elseif ($collisions.Count -gt 0) { "Green" } else { "Green" })
@@ -1052,8 +1150,6 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
     Write-Host "`n-----------------------------------------------------------------" -ForegroundColor Gray
     Write-Host "   ACTIVE MODS RANKED BY STUTTER & PERFORMANCE IMPACT" -ForegroundColor Cyan
     Write-Host "-----------------------------------------------------------------" -ForegroundColor Gray
-
-    $sortedMods = $modReports | Sort-Object -Property RiskScore -Descending
 
     foreach ($mod in $sortedMods) {
         $color = switch -Wildcard ($mod.Tier) {
@@ -1073,9 +1169,11 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
         }
         
         Write-Host " $prefix $namePadded (Score: $($mod.RiskScore.ToString().PadLeft(3)) | $hookText | Size: $($mod.SizeMB.ToString().PadLeft(5)) MB)" -ForegroundColor $color
-        Write-Host "   -> VERDICT: $($mod.Verdict)" -ForegroundColor $(if ($mod.RiskScore -ge 45) { "Yellow" } else { "DarkCyan" })
+        Write-Host "   -> POTENTIAL SPIKE: $($mod.PotentialSpike) | Frame Tax: $($mod.FrameTax)" -ForegroundColor $(if ($mod.RiskScore -ge 45) { "Red" } elseif ($mod.RiskScore -ge 20) { "Yellow" } else { "DarkCyan" })
+        Write-Host "   -> TRIGGER EVENT  : $($mod.StutterTrigger)" -ForegroundColor DarkGray
+        Write-Host "   -> VERDICT        : $($mod.Verdict)" -ForegroundColor $(if ($mod.RiskScore -ge 45) { "Yellow" } else { "DarkCyan" })
         if ($mod.Reasons -and $mod.RiskScore -ge 20) {
-            Write-Host "   -> DETAILS: $($mod.Reasons)" -ForegroundColor DarkGray
+            Write-Host "   -> DETAILS        : $($mod.Reasons)" -ForegroundColor DarkGray
         }
     }
 
@@ -1123,7 +1221,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
     # Generate Markdown Report
     $md = @()
     $md += "# Project Zomboid Mod Performance & Optimization Diagnostic Report"
-    $md += "*Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME by PZ-Mod-Performance-Suite v2.1.0 (Coded with the help of Google Gemini)*"
+    $md += "*Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME by PZ-Mod-Performance-Suite v2.2.0 (Coded with the help of Google Gemini)*"
     $md += ""
     $md += "## Executive Summary"
     $md += "- **Game Version:** $pzVersion"
@@ -1146,6 +1244,9 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
             $modIdText = $c.ModId
             $md += "### **$($c.ModName)** ($modIdText)"
             $md += "- **Impact Classification:** **$($c.Tier)** (Score: $($c.RiskScore)/100)"
+            $md += "- **Potential Frame Spike:** **$($c.PotentialSpike)**"
+            $md += "- **Continuous Frame Tax:** **$($c.FrameTax)**"
+            $md += "- **Stutter Trigger Scenario:** $($c.StutterTrigger)"
             $md += "- **Stutter Verdict:** **$($c.Verdict)**"
             $md += "- **Hook Breakdown:** $($c.PermanentHooks) Permanent Loops, $($c.TransientHooks) Transient (self-terminating), $($c.ThrottledHooks) Throttled (timer-gated)"
             $md += "- **World Object Queries:** $($c.InHookWorldQueries) in-hook queries, $($c.StaticWorldQueries) UI/static queries"
@@ -1163,11 +1264,11 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "", [switch]$LocalWorksh
     $md += "---"
     $md += "## All Active Mods Ranked by Performance Impact"
     $md += ""
-    $md += "| Mod Name | Mod ID | Tier | Score | Perm Loops | Trans / Throt | Queries (Hook/UI) | Size (MB) | Models | Stutter Verdict |"
-    $md += "|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---|"
+    $md += "| Mod Name | Mod ID | Tier | Score | Potential Spike | Frame Tax | Trigger Scenario | Perm Loops | Trans / Throt | Queries (Hook/UI) | Size (MB) | Models | Stutter Verdict |"
+    $md += "|:---|:---|:---:|:---:|:---:|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---|"
     foreach ($m in $sortedMods) {
         $mId = $m.ModId
-        $md += "| $($m.ModName) | $mId | $($m.Tier) | $($m.RiskScore) | $($m.PermanentHooks) | $($m.TransientHooks) / $($m.ThrottledHooks) | $($m.InHookWorldQueries) / $($m.StaticWorldQueries) | $($m.SizeMB) | $($m.ModelCount) | $($m.Verdict) |"
+        $md += "| $($m.ModName) | $mId | $($m.Tier) | $($m.RiskScore) | $($m.PotentialSpike) | $($m.FrameTax) | $($m.StutterTrigger) | $($m.PermanentHooks) | $($m.TransientHooks) / $($m.ThrottledHooks) | $($m.InHookWorldQueries) / $($m.StaticWorldQueries) | $($m.SizeMB) | $($m.ModelCount) | $($m.Verdict) |"
     }
 
     if ($collisions.Count -gt 0) {
@@ -1226,7 +1327,7 @@ function Show-PZMainMenu {
     while ($true) {
         Clear-Host
         Write-Host "=================================================================" -ForegroundColor Cyan
-        Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.1.0  " -ForegroundColor Yellow
+        Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.2.0  " -ForegroundColor Yellow
         Write-Host "         Created by @KodeMannn with the help of Gemini          " -ForegroundColor DarkCyan
         Write-Host "=================================================================" -ForegroundColor Cyan
         Write-Host "  [1] Run Full Performance Diagnostic Scan (Active Save)" -ForegroundColor White

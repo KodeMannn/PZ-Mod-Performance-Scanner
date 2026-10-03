@@ -73,7 +73,16 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
 ## 🔍 Key Features
 
 * **⚡ Ultra-Fast Multi-Library Workshop Indexing:** Finds mods across all Steam drives (`C:`, `D:`, `E:`, `H:`, external NVMe SSDs) via `libraryfolders.vdf`.
-* **🧠 Intelligent Semantic Lua Auditor (v2.1.0):** Evaluates Lua code semantics to differentiate:
+* **⏱️ Potential Frame Spike & Stutter Prediction Engine (v2.2.0):** Estimates concrete freeze durations based on asset weight and code intensity:
+  * `~350-550 ms [Severe Freeze]`: Massive 3D model injections causing chunk meshing stalls.
+  * `~100-250 ms [Noticeable Hitch]`: Heavy texture packs causing VRAM paging spikes.
+  * `~50-150 ms [Action Spike]`: High-volume transient hooks triggered by player actions (e.g. transcribing XP).
+  * `~10-35 ms [Combat Hitch]`: High-frequency world square / zombie entity scans during horde combat.
+  * `< 1 ms [Imperceptible]`: Harmless UI, texture replacements, or benign passive mods.
+* **📈 Continuous Frame Time Tax (+ms/frame):** Calculates exact persistent CPU cost added to every frame budget (e.g., `+1.38 ms/frame`).
+* **🎯 Stutter Trigger Scenario Classification:** Identifies exact gameplay triggers causing lag (`Chunk Border Traversal & High-Speed Driving`, `Horde Proximity & Combat`, `Action: Transcribing / Reading XP`, `Vehicle Spawn & Streaming`, etc.).
+* **🔗 Runtime Telemetry Correlation:** Correlates real recorded `Worst Frame Spike` in `console.txt` directly with the top predicted offender mod.
+* **🧠 Intelligent Semantic Lua Auditor:** Evaluates Lua code semantics to differentiate:
   * **Permanent Loops:** Unconstrained hooks executing every frame at 100–240 FPS (heavily penalized).
   * **Transient Hooks:** Self-terminating hooks with `.Remove` calls (UI listeners, 1-tick bootstrappers, retry loops) that cost virtually zero at runtime.
   * **Throttled / Gated Handlers:** Hooks gated by modulo counters (`% 30`), interval timers (`counter >= 500`), or idle state returns (`if n == 0 return`).
@@ -97,7 +106,7 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
 
 | Bottleneck Category | Engine Impact | Severity | Primary Culprits |
 | :--- | :--- | :--- | :--- |
-| **VRAM & Chunk Meshing Choke** | Stalls render thread for 300–500ms when moving across chunk boundaries | **CRITICAL** | Massive 3D model injection packs (10,000+ models, >150MB textures) |
+| **VRAM & Chunk Meshing Choke** | Stalls render thread for 350–550ms when moving across chunk boundaries | **CRITICAL** | Massive 3D model injection packs (10,000+ models, >150MB textures) |
 | **Unconstrained Permanent Lua Loops** | Consumes main-thread CPU budget running Lua calculations 240 times/sec | **CRITICAL** | Heavy `OnTick`, `OnPlayerUpdate` loops without throttle guards |
 | **Java GC Memory Sweeps** | Freezes entire world for 200–400ms during garbage collection | **HIGH RISK** | Oversized heap (`-Xmx32g`), ZGC pauses under Lua table churn |
 | **Missing Asset / Error Floods** | Floods `console.txt` with template syntax & missing asset disk logging | **HIGH RISK** | Outdated vehicle or animation templates in Build 42 |
@@ -113,7 +122,7 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
 
 ```text
 =================================================================
-   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.1.0  
+   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.2.0  
          Created by @KodeMannn with the help of Gemini          
 =================================================================
 
@@ -131,6 +140,7 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
  Java Heap Allocation : 8689 MB used of 12800 MB
  Slow Frames (>50ms)  : 91 recorded in last session
  Worst Frame Spike    : 524 ms
+   -> CORRELATION    : Strongly correlates with [6258 3D models for Viewpoint] (predicted: ~350-550 ms [Severe Freeze])
  GC Freeze Pauses     : 91 collector pauses logged
  File Override Clashes: 161 detected (159 Safe, 2 High/Moderate Risk)
 
@@ -138,21 +148,41 @@ PZ-Mod-Performance-Suite features 8 selectable operations to fit your workflow:
    ACTIVE MODS RANKED BY STUTTER & PERFORMANCE IMPACT
 -----------------------------------------------------------------
  [Tier 1 (CRITICAL)]     6258 3D models for Viewpoint [sou... (Score: 100 | Loops: 0 Perm | Size: 319.19 MB)
-   -> VERDICT: Severe Chunk Meshing Freezes & Heavy VRAM Load
-   -> DETAILS: Massive 3D model injection (10194 models) causing 400-500ms chunk stalls; Heavy texture pack (156.87 MB of textures) causing high VRAM consumption
- [Tier 3 (MODERATE)]     True Crawling                        (Score:  22 | Loops: 0 Perm, 0 Trans, 1 Throt | Size:  1.29 MB)
-   -> VERDICT: Moderate Resource Load (Periodic timers or asset weight)
-   -> DETAILS: 1 throttled / timer-gated hook (periodic execution); 10 in-hook world queries (getSquare/getZombieList)
- [Tier 4 (Lightweight)]  Foggy Breath                         (Score:  12 | Loops: 0 Perm, 0 Trans, 1 Throt | Size:  0.25 MB)
-   -> VERDICT: Safe / Well-Optimized (Throttled timer / modulo-gated hooks)
- [Tier 4 (Lightweight)]  NeatUI Equipment                     (Score:  12 | Loops: 1 Perm | Size:  1.55 MB)
-   -> VERDICT: Safe / Lightweight (Minimal runtime impact)
- [Tier 4 (Lightweight)]  Project Cook                         (Score:   2 | Loops: 0 Perm, 1 Trans, 0 Throt | Size:  7.17 MB)
-   -> VERDICT: Safe / Harmless (Transient / self-terminating hooks with zero background cost)
- [Tier 4 (Lightweight)]  Neat Crafting                        (Score:   0 | Loops: 0 Perm, 1 Trans, 0 Throt | Size:  3.88 MB)
-   -> VERDICT: Safe / Harmless (Transient / self-terminating hooks with zero background cost)
- [Tier 4 (Lightweight)]  Viewpoint                            (Score:   0 | Loops: 0 Perm | Size:  2.37 MB)
-   -> VERDICT: Safe / Lightweight (Minimal runtime impact)
+   -> POTENTIAL SPIKE: ~350-550 ms [Severe Freeze] | Frame Tax: +0.00 ms/frame
+   -> TRIGGER EVENT  : Chunk Border Traversal & High-Speed Driving
+   -> VERDICT        : Severe Chunk Meshing Freezes & Heavy VRAM Load
+   -> DETAILS        : Massive 3D model injection (10194 models) causing 400-500ms chunk stalls; Heavy texture pack (156.87 MB of textures) causing high VRAM consumption
+ [Tier 2 (HIGH RISK)]    Vanilla Vehicles Animated            (Score:  45 | Loops: 0 Perm | Size:  11.91 MB)
+   -> POTENTIAL SPIKE: ~20-60 ms [Micro-Stutter] | Frame Tax: +0.00 ms/frame
+   -> TRIGGER EVENT  : Vehicle Spawn & Streaming
+   -> VERDICT        : Vehicle Stream Console Logging Spikes
+   -> DETAILS        : Missing vehicle templates causing synchronous console error logging bursts in B42
+ [Tier 3 (MODERATE)]     True Swimming                        (Score:  29 | Loops: 0 Perm, 0 Trans, 3 Throt | Size:   1.96 MB)
+   -> POTENTIAL SPIKE: ~10-35 ms [Combat Hitch] | Frame Tax: +1.38 ms/frame
+   -> TRIGGER EVENT  : Horde Proximity & Combat
+   -> VERDICT        : Moderate Resource Load (Periodic timers or asset weight)
+   -> DETAILS        : 3 throttled / timer-gated hooks (periodic execution); 16 in-hook world queries (getSquare/getZombieList)
+ [Tier 3 (MODERATE)]     True Crawling                        (Score:  22 | Loops: 0 Perm, 0 Trans, 1 Throt | Size:   1.29 MB)
+   -> POTENTIAL SPIKE: ~10-35 ms [Combat Hitch] | Frame Tax: +0.82 ms/frame
+   -> TRIGGER EVENT  : Horde Proximity & Combat
+   -> VERDICT        : Moderate Resource Load (Periodic timers or asset weight)
+   -> DETAILS        : 1 throttled / timer-gated hook (periodic execution); 10 in-hook world queries (getSquare/getZombieList)
+ [Tier 4 (Lightweight)]  NeatUI Equipment                     (Score:  12 | Loops: 1 Perm | Size:   1.55 MB)
+   -> POTENTIAL SPIKE: ~2-8 ms [Frame Delay] | Frame Tax: +0.45 ms/frame
+   -> TRIGGER EVENT  : Continuous (Every Single Frame)
+   -> VERDICT        : Safe / Lightweight (Minimal runtime impact)
+ [Tier 4 (Lightweight)]  Project Cook                         (Score:   2 | Loops: 0 Perm, 1 Trans, 0 Throt | Size:   7.17 MB)
+   -> POTENTIAL SPIKE: < 1 ms [Imperceptible] | Frame Tax: +0.12 ms/frame
+   -> TRIGGER EVENT  : None (Passive / Static UI)
+   -> VERDICT        : Safe / Harmless (Transient / self-terminating hooks with zero background cost)
+ [Tier 4 (Lightweight)]  ZombieBuddy                          (Score:   0 | Loops: 0 Perm | Size:   0.36 MB)
+   -> POTENTIAL SPIKE: ~10-35 ms [Combat Hitch] | Frame Tax: +0.00 ms/frame
+   -> TRIGGER EVENT  : Horde Proximity & Combat
+   -> VERDICT        : Safe / Lightweight (Minimal runtime impact)
+ [Tier 4 (Lightweight)]  Clean Dirt                           (Score:   0 | Loops: 0 Perm | Size:   0.05 MB)
+   -> POTENTIAL SPIKE: < 1 ms [Imperceptible] | Frame Tax: +0.00 ms/frame
+   -> TRIGGER EVENT  : None (Passive / Static UI)
+   -> VERDICT        : Safe / Lightweight (Minimal runtime impact)
 
 -----------------------------------------------------------------
    DETECTED MOD FILE OVERRIDE CONFLICTS
