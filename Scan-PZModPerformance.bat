@@ -404,8 +404,8 @@ function Invoke-PZRevertChanges([string]$Target = "All") {
 # ==============================================================================
 function Invoke-PZScanEngine([string]$CustomServerIni = "") {
     Write-Host "`n=================================================================" -ForegroundColor Cyan
-    Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & STUTTER DIAGNOSTIC SCANNER" -ForegroundColor Yellow
-    Write-Host "                    Created by @KodeMannn (v2.0.0)               " -ForegroundColor DarkCyan
+    Write-Host "   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  " -ForegroundColor Yellow
+    Write-Host "                    Created by @KodeMannn                        " -ForegroundColor DarkCyan
     Write-Host "=================================================================`n" -ForegroundColor Cyan
 
     $versionFile = Join-Path $ZomboidUserPath "version.txt"
@@ -823,7 +823,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "") {
 
     # Generate Markdown Report
     $md = @()
-    $md += "# Project Zomboid Mod Performance & Stutter Diagnostic Report"
+    $md += "# Project Zomboid Mod Performance & Optimization Diagnostic Report"
     $md += "*Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') on $env:COMPUTERNAME by PZ-Mod-Performance-Scanner v2.0.0*"
     $md += ""
     $md += "## Executive Summary"

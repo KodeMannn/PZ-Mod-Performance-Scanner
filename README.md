@@ -1,13 +1,13 @@
-# Project Zomboid Mod Performance & Stutter Diagnostic Scanner
+# Project Zomboid Mod Performance & Optimization Suite (v2.0)
 
 ![Project Zomboid](https://img.shields.io/badge/Project%20Zomboid-Build%2042%20%7C%2041-red?style=for-the-badge&logo=steam)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue?style=for-the-badge&logo=powershell)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-A fast, automated diagnostic scanner that identifies which Project Zomboid mods cause performance drops, micro-stutters, FPS hitching, and garbage collection freezes.
+An all-in-one performance diagnostic scanner, mod conflict classifier, and 1-click optimization suite for Project Zomboid (Build 42 & Build 41).
 
-Works seamlessly on both **Build 42** (unstable/stable) and **Build 41**.
+Automatically identifies lag-causing mods, classifies safe vs. high-risk script overrides, eliminates Java garbage collection freezes, cleans ghost mods from saves, and stabilizes framerates.
 
 ---
 
