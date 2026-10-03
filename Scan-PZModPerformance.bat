@@ -615,6 +615,38 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "") {
         elseif ($modelCount -gt 50) { $riskScore += 10 }
         if ($totalMB -gt 50) { $riskScore += 10 }
 
+        # Dynamic diagnostic reasons for operational overhead
+        $dynamicReasons = @()
+        if ($perFrameTotal -gt 0) {
+            $hookDetails = @()
+            if ($onTick -gt 0) { $hookDetails += "$onTick OnTick" }
+            if ($onRenderTick -gt 0) { $hookDetails += "$onRenderTick OnRenderTick" }
+            if ($onPlayerUpdate -gt 0) { $hookDetails += "$onPlayerUpdate OnPlayerUpdate" }
+            if ($onZombieUpdate -gt 0) { $hookDetails += "$onZombieUpdate OnZombieUpdate" }
+            if ($onRender3D -gt 0) { $hookDetails += "$onRender3D OnRender3D" }
+            $hookStr = if ($hookDetails.Count -gt 0) { " ($($hookDetails -join ', '))" } else { "" }
+            $dynamicReasons += "$perFrameTotal per-frame Lua hook$(if ($perFrameTotal -ne 1) { 's' } else { '' })$hookStr firing every frame"
+        }
+        if ($worldQueries -gt 0) {
+            $dynamicReasons += "$worldQueries world square/entity quer$(if ($worldQueries -eq 1) { 'y' } else { 'ies' }) (getSquare/getZombieList)"
+        }
+        if ($inventoryQueries -gt 15) {
+            $dynamicReasons += "$inventoryQueries inventory/item container searches"
+        }
+        if ($modelCount -gt 50 -and -not ($riskReasons -match "model")) {
+            $dynamicReasons += "$modelCount custom 3D model definitions"
+        }
+        if ($totalMB -gt 50 -and -not ($riskReasons -match "Heavy texture pack")) {
+            $dynamicReasons += "Large package size ($totalMB MB)"
+        }
+
+        if ($riskReasons.Count -eq 0 -and $dynamicReasons.Count -gt 0) {
+            $riskReasons += $dynamicReasons
+        }
+        if ($riskReasons.Count -eq 0 -and $riskScore -ge 20) {
+            $riskReasons += "Moderate runtime resource footprint"
+        }
+
         $tier = "Tier 4 (Lightweight)"
         if ($riskScore -ge 75) { $tier = "Tier 1 (CRITICAL)" }
         elseif ($riskScore -ge 45) { $tier = "Tier 2 (HIGH RISK)" }
@@ -775,7 +807,7 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "") {
         $namePadded = $name.PadRight(38)
         
         Write-Host " $prefix $namePadded (Score: $($mod.RiskScore.ToString().PadLeft(3)) | Hooks: $($mod.PerFrameHooks.ToString().PadLeft(2)) | Size: $($mod.SizeMB.ToString().PadLeft(5)) MB)" -ForegroundColor $color
-        if ($mod.Reasons) {
+        if ($mod.Reasons -and $mod.RiskScore -ge 20) {
             Write-Host "   -> $($mod.Reasons)" -ForegroundColor DarkGray
         }
     }
@@ -839,9 +871,9 @@ function Invoke-PZScanEngine([string]$CustomServerIni = "") {
     $md += "- **Direct File Override Clashes:** $($collisions.Count) total ($($safeCollisions.Count) Safe, $($riskyCollisions.Count) High/Moderate Risk)"
     $md += ""
     $md += "---"
-    $md += "## Key Bottleneck Culprits"
+    $md += "## Key Bottlenecks & Moderate Impact Mods (Tier 1 - Tier 3)"
     $md += ""
-    $criticals = $sortedMods | Where-Object { $_.RiskScore -ge 45 }
+    $criticals = $sortedMods | Where-Object { $_.RiskScore -ge 20 }
     foreach ($c in $criticals) {
         $modIdText = $c.ModId
         $md += "### **$($c.ModName)** ($modIdText)"
