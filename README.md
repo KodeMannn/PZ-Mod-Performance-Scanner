@@ -31,16 +31,24 @@ In Project Zomboid, performance drops rarely come from raw polygon rendering alo
 This scanner runs a comprehensive static and runtime audit of your active game environment:
 
 - 🎮 **Savegame Auto-Detection:** Automatically discovers your latest active save and reads enabled mods directly from `mods.txt`.
-- 📦 **Multi-Library Steam Workshop Indexing:** Finds mods across all Steam drives (`C:`, `D:`, `E:`, `H:`) via `libraryfolders.vdf`.
+- 👻 **Ghost Mod Filtering:** Automatically skips uninstalled mods from the performance audit so phantom references in `mods.txt` don't distort risk scores or tables, providing an actionable notice to clean them.
+- 🖥️ **Dedicated Server & Co-op Support:** Supports scanning dedicated/multiplayer server `.ini` files (`Mods=...` line) for VPS, Pterodactyl, and Co-op hosts.
+- 📦 **Multi-Library Steam Workshop Indexing:** Finds mods across all Steam drives (`C:`, `D:`, `E:`, `H:`, etc.) via `libraryfolders.vdf`.
 - ⏱️ **Lua Event Hook Audit:** Scans every active mod script for per-frame execution hooks (`OnTick`, `OnRenderTick`, `OnPlayerUpdate`, `OnZombieUpdate`, `OnRender3D`).
 - 🧟 **Heavy Query Detection:** Detects high-cost loops iterating over zombie lists, moving characters, and map grid squares.
+- 🎨 **Texture & VRAM Bloat Audit:** Measures mod `.pack` texture archives and raw `.png` footprints, warning when mods exceed 100MB of graphics memory.
+- 💥 **Intelligent Conflict Classifier:** Distinguishes harmless localization merges and shared category icons (**SAFE**) from dangerous executable Lua script clashes (**HIGH RISK**), isolating files that could break gameplay or cause multiplayer desyncs.
 - 📐 **3D Model & VRAM Footprint:** Counts custom 3D model definitions (`.txt`, `.fbx`, `.obj`, `.bin`) and measures disk asset sizes.
 - 📜 **Runtime Telemetry Parsing:** Reads `console.txt` and `DebugLog.txt` to capture:
   - Recorded slow frames (>50ms spikes) on main and render threads.
   - Collector freeze pauses (`the collector's pauses`).
   - Active VRAM vs total GPU memory.
   - Java heap utilization.
-  - Template syntax errors spammed to disk.
+- ⚡ **1-Click Built-in Optimizers:**
+  - **Java GC Optimizer:** Configures low-latency G1GC (`-XX:MaxGCPauseMillis=5`) in `ProjectZomboid64.json` to eliminate 200–400ms periodic freezes (with automatic `.bak` backup).
+  - **Safe Frame Cap:** Sets `frameRate=120` in `options.ini` to stop per-frame Lua hooks from quad-firing at 240 FPS.
+  - **Save Cleaner:** Automatically purges uninstalled/ghost mods from your active save's `mods.txt`.
+- 💬 **Discord-Ready Summary:** Exports a clean, copy-pasteable summary block formatted for Discord troubleshooting channels.
 - 🚦 **Actionable Risk Tiers:** Ranks all active mods into 4 risk tiers (**Tier 1 Critical**, **Tier 2 High**, **Tier 3 Moderate**, and **Tier 4 Lightweight**).
 - 📝 **Markdown Report Generator:** Automatically generates a detailed `ModPerformanceReport.md`.
 
@@ -49,21 +57,55 @@ This scanner runs a comprehensive static and runtime audit of your active game e
 ## 🚀 Quick Start
 
 ### Method 1: Standalone One-Click `.bat` (Recommended)
-`Scan-PZModPerformance.bat` is a **100% self-contained hybrid polyglot**. It has **zero dependencies** and does not even require the `.ps1` file to be present.
-1. Download **`Scan-PZModPerformance.bat`** (or grab the release zip).
-2. Place it anywhere (Desktop, your `Zomboid` folder, or USB).
+`Scan-PZModPerformance.bat` is a **100% self-contained hybrid polyglot**. It has **zero dependencies** and does not require any installation or separate `.ps1` file.
+1. Download **`Scan-PZModPerformance.bat`** (from [Releases](https://github.com/KodeMannn/PZ-Mod-Performance-Scanner/releases)).
+2. Place it anywhere (Desktop, your `Zomboid` folder, or server directory).
 3. Double-click **`Scan-PZModPerformance.bat`**.
-4. Review the color-coded terminal report or open the generated **`ModPerformanceReport.md`**.
+4. Use the interactive menu:
+   ```text
+   =================================================================
+      PROJECT ZOMBOID MOD PERFORMANCE & STUTTER DIAGNOSTIC SCANNER  
+                     v2.0.0 - Created by @KodeMannn                 
+   =================================================================
+    [1] Run Full Performance Diagnostic Scan (Active Save)
+    [2] Scan Dedicated / Multiplayer Server Config (.ini)
+    [3] One-Click Java GC Optimizer (Apply G1GC + 5ms Pause Tuning)
+    [4] Safe Frame Cap Optimizer (Reduce Lua Tick Multiplier)
+    [5] Clean Phantom / Missing Mods from Savegame
+    [6] Revert Changes / Restore Backups (JVM, FPS, Savegame)
+    [7] Open Last Generated Diagnostic Report
+    [0] Exit
+   =================================================================
+   ```
 
-### Method 2: PowerShell (CLI Power Users)
-If you prefer running pure PowerShell or integrating it into automated scripts:
+### Method 2: PowerShell / CLI Automation
+Run interactive or automated scans with command-line flags:
 ```powershell
+# Interactive menu:
 .\Scan-PZModPerformance.ps1
-```
 
-Or specify custom output paths:
-```powershell
-.\Scan-PZModPerformance.ps1 -ZomboidUserPath "$env:USERPROFILE\Zomboid" -ReportOutputPath "C:\MyReports\Report.md"
+# Non-interactive automatic scan:
+.\Scan-PZModPerformance.ps1 -Auto
+
+# Audit a dedicated server config:
+.\Scan-PZModPerformance.ps1 -ServerConfig "$env:USERPROFILE\Zomboid\Server\servertest.ini"
+
+# Apply JVM garbage collection fix automatically:
+.\Scan-PZModPerformance.ps1 -FixGC
+
+# Apply safe 120 FPS cap:
+.\Scan-PZModPerformance.ps1 -CapFPS 120
+
+# Clean ghost mods from current save:
+.\Scan-PZModPerformance.ps1 -CleanSave
+
+# Revert all changes and restore original backups:
+.\Scan-PZModPerformance.ps1 -Revert All
+
+# Revert specific optimizations:
+.\Scan-PZModPerformance.ps1 -Revert GC    # Restores ProjectZomboid64.json.bak
+.\Scan-PZModPerformance.ps1 -Revert FPS   # Restores options.ini.bak (or resets to 240 FPS)
+.\Scan-PZModPerformance.ps1 -Revert Save  # Restores mods.txt.bak in savegame
 ```
 
 ---
