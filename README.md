@@ -1,84 +1,30 @@
-# Project Zomboid Mod Performance & Optimization Suite (v2.0)
+# PZ-Mod-Performance-Suite ⚡
+**Advanced Mod Performance Diagnostic & Optimization Suite for Project Zomboid (Build 42 & 41)**
 
-![Project Zomboid](https://img.shields.io/badge/Project%20Zomboid-Build%2042%20%7C%2041-red?style=for-the-badge&logo=steam)
-![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue?style=for-the-badge&logo=powershell)
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/5rmsnwMPez)
+[![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)]()
+[![Game](https://img.shields.io/badge/Project%20Zomboid-Build%2042%20%7C%2041-darkgreen.svg)](https://projectzomboid.com/)
+[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen.svg)]()
+[![AI Assisted](https://img.shields.io/badge/Coded%20with-Google%20Gemini-8E75C2?logo=google&logoColor=white)]()
 
-An all-in-one performance diagnostic scanner, mod conflict classifier, and 1-click optimization suite for Project Zomboid (Build 42 & Build 41).
+**PZ-Mod-Performance-Suite** is a fast, standalone diagnostic scanner and 1-click optimization toolkit engineered to identify and eliminate micro-stutters, FPS hitching, Lua frame budget overflows, and Java garbage collection freezes in Project Zomboid.
 
-Automatically identifies lag-causing mods, classifies safe vs. high-risk script overrides, eliminates Java garbage collection freezes, cleans ghost mods from saves, and stabilizes framerates.
+Whether you're running a heavily modded singleplayer save or hosting a dedicated multiplayer server, **PZ-Mod-Performance-Suite** audits active mods across all your Steam libraries, classifies harmless localization merges from high-risk executable script conflicts, and applies verified low-latency engine tuning.
 
----
-
-## ⚡ The Problem: Why Does Modded Project Zomboid Hitch?
-
-In Project Zomboid, performance drops rarely come from raw polygon rendering alone. Instead, hitches and micro-stutters usually originate from four distinct bottlenecks:
-
-1. **Lua Frame Budget Overflows:**
-   At 60 FPS, the game has only **16.6 milliseconds** to process an entire frame. When mods attach heavy Lua scripts to per-frame events (`OnTick`, `OnRenderTick`, `OnPlayerUpdate`, `OnZombieUpdate`) or repeatedly query `getZombieList()` / `getSquare()`, Lua alone can consume 13–18ms+, instantly halving framerate.
-2. **The 240 FPS Multiplier Trap:**
-   Running with an uncapped framerate or 240 FPS forces Lua per-tick hooks to fire 240 times per second instead of 60. This quadruples the CPU burden of every installed mod.
-3. **VRAM Saturation & Chunk Meshing:**
-   Massive 3D model and voxel replacement mods (such as 3D interior packs with 10,000+ custom models) push GPU VRAM past 10–11 GB. When moving between map chunks, the render thread chokes for 100ms–250ms while meshing voxels.
-4. **Java Garbage Collection (GC) Freezes (200ms–400ms):**
-   Heavy Lua table and string churn paired with oversized Java heaps (`-Xmx32g`) forces the JVM to pause the entire game world to sweep memory.
+> ℹ️ **Disclaimer:** This project was designed and developed by [@KodeMannn](https://github.com/KodeMannn) with the coding assistance and pair-programming of **Google Gemini**.
 
 ---
 
-## 🔍 What This Tool Does
+## ⚡ Quick Start
 
-This scanner runs a comprehensive static and runtime audit of your active game environment:
+### 🪟 Windows (One-Click Executable)
+1. **Download**: Grab [`Scan-PZModPerformance.bat`](https://github.com/KodeMannn/PZ-Mod-Performance-Suite/releases/latest) (single-file, zero dependencies).
+2. **Run**: Double-click `Scan-PZModPerformance.bat` anywhere on your computer (Desktop, your `Zomboid` folder, or server directory).
+3. **Choose Option**: Use the interactive terminal menu to run a full diagnostic scan, apply 1-click JVM GC optimization, set safe frame caps, clean ghost mods, or revert changes.
+4. **Play Smooth**: Review the color-coded report before surviving Kentucky with zero micro-stutters.
 
-- 🎮 **Savegame Auto-Detection:** Automatically discovers your latest active save and reads enabled mods directly from `mods.txt`.
-- 👻 **Ghost Mod Filtering:** Automatically skips uninstalled mods from the performance audit so phantom references in `mods.txt` don't distort risk scores or tables, providing an actionable notice to clean them.
-- 🖥️ **Dedicated Server & Co-op Support:** Supports scanning dedicated/multiplayer server `.ini` files (`Mods=...` line) for VPS, Pterodactyl, and Co-op hosts.
-- 📦 **Multi-Library Steam Workshop Indexing:** Finds mods across all Steam drives (`C:`, `D:`, `E:`, `H:`, etc.) via `libraryfolders.vdf`.
-- ⏱️ **Lua Event Hook Audit:** Scans every active mod script for per-frame execution hooks (`OnTick`, `OnRenderTick`, `OnPlayerUpdate`, `OnZombieUpdate`, `OnRender3D`).
-- 🧟 **Heavy Query Detection:** Detects high-cost loops iterating over zombie lists, moving characters, and map grid squares.
-- 🎨 **Texture & VRAM Bloat Audit:** Measures mod `.pack` texture archives and raw `.png` footprints, warning when mods exceed 100MB of graphics memory.
-- 💥 **Intelligent Conflict Classifier:** Distinguishes harmless localization merges and shared category icons (**SAFE**) from dangerous executable Lua script clashes (**HIGH RISK**), isolating files that could break gameplay or cause multiplayer desyncs.
-- 📐 **3D Model & VRAM Footprint:** Counts custom 3D model definitions (`.txt`, `.fbx`, `.obj`, `.bin`) and measures disk asset sizes.
-- 📜 **Runtime Telemetry Parsing:** Reads `console.txt` and `DebugLog.txt` to capture:
-  - Recorded slow frames (>50ms spikes) on main and render threads.
-  - Collector freeze pauses (`the collector's pauses`).
-  - Active VRAM vs total GPU memory.
-  - Java heap utilization.
-- ⚡ **1-Click Built-in Optimizers:**
-  - **Java GC Optimizer:** Configures low-latency G1GC (`-XX:MaxGCPauseMillis=5`) in `ProjectZomboid64.json` to eliminate 200–400ms periodic freezes (with automatic `.bak` backup).
-  - **Safe Frame Cap:** Sets `frameRate=120` in `options.ini` to stop per-frame Lua hooks from quad-firing at 240 FPS.
-  - **Save Cleaner:** Automatically purges uninstalled/ghost mods from your active save's `mods.txt`.
-- 💬 **Discord-Ready Summary:** Exports a clean, copy-pasteable summary block formatted for Discord troubleshooting channels.
-- 🚦 **Actionable Risk Tiers:** Ranks all active mods into 4 risk tiers (**Tier 1 Critical**, **Tier 2 High**, **Tier 3 Moderate**, and **Tier 4 Lightweight**).
-- 📝 **Markdown Report Generator:** Automatically generates a detailed `ModPerformanceReport.md`.
-
----
-
-## 🚀 Quick Start
-
-### Method 1: Standalone One-Click `.bat` (Recommended)
-`Scan-PZModPerformance.bat` is a **100% self-contained hybrid polyglot**. It has **zero dependencies** and does not require any installation or separate `.ps1` file.
-1. Download **`Scan-PZModPerformance.bat`** (from [Releases](https://github.com/KodeMannn/PZ-Mod-Performance-Suite/releases)).
-2. Place it anywhere (Desktop, your `Zomboid` folder, or server directory).
-3. Double-click **`Scan-PZModPerformance.bat`**.
-4. Use the interactive menu:
-   ```text
-   =================================================================
-      PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0   
-                     Created by @KodeMannn                          
-   =================================================================
-    [1] Run Full Performance Diagnostic Scan (Active Save)
-    [2] Scan Dedicated / Multiplayer Server Config (.ini)
-    [3] One-Click Java GC Optimizer (Apply G1GC + 5ms Pause Tuning)
-    [4] Safe Frame Cap Optimizer (Reduce Lua Tick Multiplier)
-    [5] Clean Phantom / Missing Mods from Savegame
-    [6] Revert Changes / Restore Backups (JVM, FPS, Savegame)
-    [7] Open Last Generated Diagnostic Report
-    [0] Exit
-   =================================================================
-   ```
-
-### Method 2: PowerShell / CLI Automation
+### 💻 PowerShell / CLI Power Users
 Run interactive or automated scans with command-line flags:
 ```powershell
 # Interactive menu:
@@ -90,7 +36,7 @@ Run interactive or automated scans with command-line flags:
 # Audit a dedicated server config:
 .\Scan-PZModPerformance.ps1 -ServerConfig "$env:USERPROFILE\Zomboid\Server\servertest.ini"
 
-# Apply JVM garbage collection fix automatically:
+# Apply 1-click JVM garbage collection fix:
 .\Scan-PZModPerformance.ps1 -FixGC
 
 # Apply safe 120 FPS cap:
@@ -101,12 +47,58 @@ Run interactive or automated scans with command-line flags:
 
 # Revert all changes and restore original backups:
 .\Scan-PZModPerformance.ps1 -Revert All
-
-# Revert specific optimizations:
-.\Scan-PZModPerformance.ps1 -Revert GC    # Restores ProjectZomboid64.json.bak
-.\Scan-PZModPerformance.ps1 -Revert FPS   # Restores options.ini.bak (or resets to 240 FPS)
-.\Scan-PZModPerformance.ps1 -Revert Save  # Restores mods.txt.bak in savegame
 ```
+
+> **Zero Dependencies:** Requires no installation, no extra modules, and no separate `.ps1` file. Runs out-of-the-box on Windows 10 & 11 via native PowerShell-Batch polyglot execution.
+
+---
+
+## 🚀 Suite Profiles & Operations
+
+PZ-Mod-Performance-Suite features 7 selectable operations to fit your workflow:
+
+| Profile | Action / Target | Typical Duration | Best For |
+| :--- | :--- | :--- | :--- |
+| **`[1] Full Diagnostic Scan`** *(Default)* | Active Save (`mods.txt`), Workshop, Lua Hooks, VRAM, Hitches | **~2.5 seconds** | Identifying lag-causing mods and stutter sources in your active save |
+| **`[2] Dedicated Server Scan`** | Dedicated server `.ini` files (`servertest.ini` or custom path) | **~2.5 seconds** | Auditing server modpacks for VPS, Pterodactyl, and Co-op hosts |
+| **`[3] 1-Click Java GC Tuning`** | `ProjectZomboid64.json` launcher configuration | **< 1 second** | Eliminating 200–400ms periodic world freezes via low-latency G1GC |
+| **`[4] Safe Frame Cap Tuning`** | `options.ini` display frameRate setting | **< 1 second** | Throttling Lua tick execution overhead down from 240/uncapped FPS |
+| **`[5] Clean Phantom Mods`** | Active savegame `mods.txt` | **< 1 second** | Purging uninstalled ghost mods to stop console spam and speed up boot |
+| **`[6] Revert Changes / Backups`** | JVM config, FPS cap, and savegame mods | **< 1 second** | Safely restoring original `.bak` backups and vanilla engine settings |
+| **`[7] Open Last Report`** | `ModPerformanceReport.md` | **Instant** | Viewing detailed breakdown, conflict tables, and Discord summaries |
+
+---
+
+## 🔍 Key Features
+
+* **⚡ Ultra-Fast Multi-Library Workshop Indexing:** Finds mods across all Steam drives (`C:`, `D:`, `E:`, `H:`, external NVMe SSDs) via `libraryfolders.vdf`.
+* **⏱️ Lua Event Hook Profiler:** Deep-scans every active mod script for per-frame execution hooks (`OnTick`, `OnRenderTick`, `OnPlayerUpdate`, `OnZombieUpdate`, `OnRender3D`).
+* **🧟 Heavy World & Inventory Query Audit:** Detects high-cost loops iterating over zombie lists (`getZombieList`), moving characters, and map grid squares (`getSquare`).
+* **🎨 Texture & VRAM Bloat Measurement:** Measures `.pack` texture archives and raw `.png` footprints, warning when mods consume excessive graphics memory (>100MB).
+* **🛡️ Intelligent Conflict & Override Classifier:** Automatically classifies mod file overlaps into:
+  * **Safe (Translations & Shared UI):** Verifies harmless localization dictionary merges (`/translate/`), shared category icons, and Git metadata.
+  * **High Risk (Executable Lua Overrides):** Isolates direct Lua code replacements (`client/`, `server/`, `shared/`) that can break gameplay mechanics or cause multiplayer desyncs.
+* **👻 Ghost Mod Filtering:** Automatically skips uninstalled mods from the performance audit so phantom references in `mods.txt` don't distort risk scores.
+* **⚙️ 1-Click JVM Garbage Collection Tuning:** Patches `ProjectZomboid64.json` to low-latency G1GC (`-XX:MaxGCPauseMillis=5`, `-Dpzopt.gc=g1`, `-Xmx16g`) with automatic `.bak` backup to eliminate 200–400ms complete freezes.
+* **🎯 Safe Frame Rate Limiter:** Easily switches `frameRate` in `options.ini` between 60, 120, 144, or custom FPS to avoid running tick hooks 240 times/sec.
+* **🧹 Savegame Ghost Mod Cleaner:** Automatically discovers and removes deleted mods from active save files (`mods.txt`).
+* **🔄 Full Rollback & Revert Engine:** Restore any optimization back to original vanilla defaults with a single keypress.
+* **📝 Markdown & Discord Export:** Generates rich markdown reports and a copy-pasteable summary block for Discord/Reddit community troubleshooting.
+
+---
+
+## 🛡️ Bottleneck Detection & Risk Matrix
+
+| Bottleneck Category | Engine Impact | Severity | Primary Culprits |
+| :--- | :--- | :--- | :--- |
+| **Per-Frame Lua Overflows** | Consumes entire 16.6ms frame budget running Lua scripts | **CRITICAL** | Heavy `OnTick`, `OnPlayerUpdate`, `OnZombieUpdate` hooks |
+| **VRAM & Chunk Meshing Choke** | Stalls render thread for 100–250ms when moving across chunks | **CRITICAL** | Massive 3D model & voxel replacement packs (10,000+ models) |
+| **Java GC Memory Sweeps** | Freezes entire world for 200–400ms during garbage collection | **HIGH RISK** | Oversized heap (`-Xmx32g`), ZGC pauses under Lua table churn |
+| **Uncapped 240 FPS Multiplier** | Forces Lua per-frame hooks to execute 240 times/sec instead of 60 | **HIGH RISK** | `frameRate=240` or uncapped FPS in `options.ini` |
+| **Direct Lua Script Collisions** | One mod silently overrides another mod's script logic | **HIGH RISK** | Overlapping files in `media/lua/client/` or `server/` |
+| **Heavy World Entity Iteration** | Massive CPU spikes scanning all zombies/squares in radius | **MODERATE** | `getZombieList()`, `getMovingObjects()`, `getSquare()` loops |
+| **Missing Asset / Error Floods** | Floods `console.txt` with template syntax & missing asset errors | **MODERATE** | Outdated vehicle or animation templates |
+| **Localization & Icon Merges** | Standard dictionary merge; no gameplay logic altered | **SAFE** | Translation files (`/translate/`), shared category icons |
 
 ---
 
@@ -114,42 +106,70 @@ Run interactive or automated scans with command-line flags:
 
 ```text
 =================================================================
-   PROJECT ZOMBOID MOD PERFORMANCE & STUTTER DIAGNOSTIC SCANNER
-                    Created by @KodeMannn                        
+   PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0  
+         Created by @KodeMannn with the help of Gemini          
 =================================================================
 
  [INFO] Detected Game Version: 42.21.0
  [INFO] Active Savegame: Outbreak / 2026-10-02_17-05-43
- [INFO] Total Enabled Mods in Save: 40
+ [INFO] Total Enabled Mods to Audit: 39
 
- [*] Profiling Lua Event Hooks, High-Frequency Ticks, and 3D Assets...
- [*] Parsing Runtime Telemetry & Slow Frame Logs...
+ [*] Auditing Lua hooks, 3D meshes, texture packs, and file collisions...
 
 -----------------------------------------------------------------
    RUNTIME ENGINE TELEMETRY SUMMARY
 -----------------------------------------------------------------
  Configured Frame Cap : 240 FPS (Active: 240 FPS)
- GPU VRAM Usage       : 1400 MB free of 12282 MB
- Java Heap Allocation : 7344 MB used of 14628 MB
- Slow Frames (>50ms)  : 9 recorded in last session
- Worst Frame Spike    : 424.6 ms
- GC Freeze Pauses     : 9 collector pauses logged
+ GPU VRAM Usage       : 1999 MB free of 12282 MB
+ Java Heap Allocation : 2313 MB used of 4456 MB
+ Slow Frames (>50ms)  : 7 recorded in last session
+ Worst Frame Spike    : 397.2 ms
+ GC Freeze Pauses     : 7 collector pauses logged
+ File Override Clashes: 304 detected (302 Safe, 2 High/Moderate Risk)
 
 -----------------------------------------------------------------
    ACTIVE MODS RANKED BY STUTTER & PERFORMANCE IMPACT
 -----------------------------------------------------------------
- [Tier 1 (CRITICAL)]     Immersive Snow                         (Score: 100 | Hooks:  8 | Size: 12.23 MB)
-   -> Per-tick snow/weather emitter with multiple OnTick hooks
- [Tier 1 (CRITICAL)]     CleanUI                                (Score: 100 | Hooks: 31 | Size: 12.37 MB)
-   -> High frequency UI redraws and 60+ world square lookups
- [Tier 1 (CRITICAL)]     6258 3D models for Viewpoint           (Score: 100 | Hooks:  0 | Size: 319.19 MB)
-   -> Massive 3D model injection (10194 models) causing severe VRAM and chunk meshing pauses
+ [Tier 1 (CRITICAL)]     6258 3D models for Viewpoint [sour_... (Score: 100 | Hooks:  0 | Size: 319.19 MB)
+   -> Massive 3D model injection (10194 models) causing severe VRAM and chunk meshing pauses; Heavy texture pack (156.87 MB of textures) causing high VRAM consumption
  [Tier 2 (HIGH RISK)]    Zombie Dismemberment [B42.21]          (Score:  66 | Hooks:  2 | Size:  5.38 MB)
    -> Executes on every zombie update to adjust bone states and blood models
- [Tier 3 (MODERATE)]     Functional Appliances 2                (Score:  41 | Hooks:  2 | Size:  9.16 MB)
+ [Tier 2 (HIGH RISK)]    Vanilla Vehicles Animated              (Score:  60 | Hooks:  0 | Size: 23.39 MB)
+   -> Missing vehicle templates causing console error logging
+ [Tier 3 (MODERATE)]     Neat Building                          (Score:  44 | Hooks:  3 | Size: 10.89 MB)
+ [Tier 3 (MODERATE)]     Tidy Up Meister                        (Score:  43 | Hooks:  5 | Size:  1.28 MB)
  [Tier 4 (Lightweight)]  Viewpoint                              (Score:   0 | Hooks:  0 | Size:  2.37 MB)
 
+ [!] Notice: 4 mod(s) in save are uninstalled from disk (omitted from performance audit):
+     - CleanUI
+     - PFHDTrueCargo
+     - ImmersiveSnow
+     - PZTheMutants
+     -> Tip: Select Menu Option [5] to clean these phantom mods from your save.
+
+-----------------------------------------------------------------
+   DETECTED MOD FILE OVERRIDE CONFLICTS
+-----------------------------------------------------------------
+ Total File Overlaps: 304 (302 Safe, 2 High/Moderate Risk)
+
+ [ALERT] High-Risk Code / Script Overrides (2 detected):
+   [!] media/lua/client/fwoscript.lua
+       Category: Executable Lua Script
+       Impact:   Executable Lua code override; one mod completely overwrites the other
+       Mods:     FWO Working Bench Press & Treadmill, FWO Fitness Workout Overhaul
+   [!] media/lua/server/fwoscript.lua
+       Category: Executable Lua Script
+       Impact:   Executable Lua code override; one mod completely overwrites the other
+       Mods:     FWO Working Bench Press & Treadmill, FWO Fitness Workout Overhaul
+
+ [SAFE] Safe Overrides (302 harmless files):
+        302 files are SAFE translation merges, shared UI icons, or Git metadata.
+   [SAFE] media/lua/shared/translate/ptbr/sandbox.json (Translation Merge)
+   [SAFE] media/ui/categoryicon/blade.png (Shared UI Asset)
+   ... and 300 more safe files (see ModPerformanceReport.md)
+
  [SUCCESS] Full Diagnostic Report saved to: ModPerformanceReport.md
+=================================================================
 ```
 
 ---
@@ -161,20 +181,31 @@ Run interactive or automated scans with command-line flags:
 2. **Tame Massive 3D Model Packs:**
    If your GPU has 8GB–12GB of VRAM and you experience 100–250ms hitches when driving into town or entering buildings, disable custom 3D voxel furniture packs while keeping your core camera/lighting mods.
 3. **JVM Garbage Collection Tuning:**
-   If you experience 200–400ms complete world freezes every minute or two, open `ProjectZomboid64.json` in your game install folder:
+   If you experience 200–400ms complete world freezes every minute or two, use Menu Option `[3]` or open `ProjectZomboid64.json` in your game install folder:
    - Reduce `-Xmx32g` to `-Xmx16g`.
    - Under `"windows" -> "10.0.17134"`, replace `-XX:+UseZGC` with `-XX:+UseG1GC`, `-Dpzopt.gc=g1`, and `-XX:MaxGCPauseMillis=5`.
 
 ---
 
-## 🤖 Disclaimer & Acknowledgments
+## 💬 Community & Discord
 
-This tool was designed and developed by [@KodeMannn](https://github.com/KodeMannn) with the coding assistance and pair-programming of **Google Gemini**.
+Have questions, feedback, or want to discuss Project Zomboid modding performance and optimization?
+Join our community on Discord:
+
+👉 **[Join our Discord Server](https://discord.gg/5rmsnwMPez)**
+
+---
+
+## 🤝 Contributing & Support
+
+If you encounter an issue, have a false positive risk flag, or want to suggest an optimization:
+1. Open an issue on GitHub at [Issues](https://github.com/KodeMannn/PZ-Mod-Performance-Suite/issues).
+2. Reach out on [Discord](https://discord.gg/5rmsnwMPez).
+
+Pull requests to improve detection heuristics, expand optimization profiles, or add features are always welcome!
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
-
-Contributions, issues, and feature requests are welcome!
+Distributed under the [MIT License](LICENSE). Copyright (c) 2026 KodeMannn.
