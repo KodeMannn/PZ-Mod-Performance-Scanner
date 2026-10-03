@@ -58,14 +58,14 @@ This scanner runs a comprehensive static and runtime audit of your active game e
 
 ### Method 1: Standalone One-Click `.bat` (Recommended)
 `Scan-PZModPerformance.bat` is a **100% self-contained hybrid polyglot**. It has **zero dependencies** and does not require any installation or separate `.ps1` file.
-1. Download **`Scan-PZModPerformance.bat`** (from [Releases](https://github.com/KodeMannn/PZ-Mod-Performance-Scanner/releases)).
+1. Download **`Scan-PZModPerformance.bat`** (from [Releases](https://github.com/KodeMannn/PZ-Mod-Performance-Suite/releases)).
 2. Place it anywhere (Desktop, your `Zomboid` folder, or server directory).
 3. Double-click **`Scan-PZModPerformance.bat`**.
 4. Use the interactive menu:
    ```text
    =================================================================
-      PROJECT ZOMBOID MOD PERFORMANCE & STUTTER DIAGNOSTIC SCANNER  
-                     v2.0.0 - Created by @KodeMannn                 
+      PROJECT ZOMBOID MOD PERFORMANCE & OPTIMIZATION SUITE v2.0.0   
+                     Created by @KodeMannn                          
    =================================================================
     [1] Run Full Performance Diagnostic Scan (Active Save)
     [2] Scan Dedicated / Multiplayer Server Config (.ini)
